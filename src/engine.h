@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <chrono>
+#include <filesystem>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/cudawarping.hpp>
@@ -11,11 +12,6 @@
 
 // Utility methods
 namespace Util {
-    inline bool doesFileExist(const std::string& filepath) {
-        std::ifstream f(filepath.c_str());
-        return f.good();
-    }
-
     inline void checkCudaErrorCode(cudaError_t code) {
         if (code != 0) {
             std::string errMsg = "CUDA operation failed with code: " + std::to_string(code) + "(" + cudaGetErrorName(code) + "), with message: " + cudaGetErrorString(code);
@@ -25,6 +21,8 @@ namespace Util {
     }
 
     std::vector<std::string> getFilesInDirectory(const std::string& dirPath);
+
+    std::string getDirPath(const std::string& filePath);
 }
 // Utility Timer
 template <typename Clock = std::chrono::high_resolution_clock>
@@ -172,4 +170,5 @@ private:
     const Options m_options;
     Logger m_logger;
     std::string m_engineName;
+    std::filesystem::path m_trtModelPath;
 };

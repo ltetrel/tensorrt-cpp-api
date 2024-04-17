@@ -19,6 +19,13 @@ std::vector<std::string> Util::getFilesInDirectory(const std::string& dirPath) {
     return filepaths;
 }
 
+std::string Util::getDirPath(const std::string& filePath){
+        std::filesystem::path p = filePath;
+        std::string parentPath = p.parent_path();
+
+        return parentPath;
+}
+
 void Logger::log(Severity severity, const char *msg) noexcept {
     // Would advise using a proper logging utility such as https://github.com/gabime/spdlog
     // For the sake of this tutorial, will just log to the console.
@@ -37,17 +44,19 @@ bool Engine::build(std::string onnxModelPath, const std::array<float, 3>& subVal
     m_subVals = subVals;
     m_divVals = divVals;
     m_normalize = normalize;
+    m_trtModelPath = Util::getDirPath(onnxModelPath);
 
     // Only regenerate the engine file if it has not already been generated for the specified options
     m_engineName = serializeEngineOptions(m_options, onnxModelPath);
-    std::cout << "Searching for engine file with name: " << m_engineName << std::endl;
+    m_trtModelPath = m_trtModelPath.append(m_engineName);
+    std::cout << "Searching for engine file: " << m_trtModelPath << std::endl;
 
-    if (doesFileExist(m_engineName)) {
-        std::cout << "Engine found, not regenerating..." << std::endl;
+    if (std::filesystem::exists(m_trtModelPath)) {
+        std::cout << "Engine found: "<< m_trtModelPath  << " not regenerating..." << std::endl;
         return true;
     }
 
-    if (!doesFileExist(onnxModelPath)) {
+    if (!std::filesystem::exists(std::filesystem::path(onnxModelPath))) {
         throw std::runtime_error("Could not find model at path: " + onnxModelPath);
     }
 
@@ -192,10 +201,10 @@ bool Engine::build(std::string onnxModelPath, const std::array<float, 3>& subVal
     }
 
     // Write the engine to disk
-    std::ofstream outfile(m_engineName, std::ofstream::binary);
+    std::ofstream outfile(std::string(m_trtModelPath), std::ofstream::binary);
     outfile.write(reinterpret_cast<const char*>(plan->data()), plan->size());
 
-    std::cout << "Success, saved engine to " << m_engineName << std::endl;
+    std::cout << "Success, saved engine to " << m_trtModelPath << std::endl;
 
     checkCudaErrorCode(cudaStreamDestroy(profileStream));
     return true;
@@ -212,7 +221,7 @@ Engine::~Engine() {
 
 bool Engine::loadNetwork() {
     // Read the serialized model from disk
-    std::ifstream file(m_engineName, std::ios::binary | std::ios::ate);
+    std::ifstream file(m_trtModelPath, std::ios::binary | std::ios::ate);
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
 
@@ -553,7 +562,7 @@ Int8EntropyCalibrator2::Int8EntropyCalibrator2(int32_t batchSize, int32_t inputW
     checkCudaErrorCode(cudaMalloc(&m_deviceInput, m_inputCount * sizeof(float)));
 
     // Read the name of all the files in the specified directory.
-    if (!doesFileExist(calibDataDirPath)) {
+    if (!std::filesystem::exists(std::filesystem::path(calibDataDirPath))) {
         throw std::runtime_error("Error, directory at provided path does not exist: " + calibDataDirPath);
     }
 
