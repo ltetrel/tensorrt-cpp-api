@@ -18,9 +18,17 @@ if (NOT TensorRT_DIR)
 endif()
 
 # We require CUDA, OpenCV, and TensorRT
-find_package(TensorRT REQUIRED)
-find_package(CUDA REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(TensorRT 8.6 REQUIRED)
+find_package(CUDA 11.7 REQUIRED)
+find_package(OpenCV 4.8 REQUIRED)
+
+# argparse
+include(FetchContent)
+FetchContent_Declare(
+    argparse
+    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+)
+FetchContent_MakeAvailable(argparse)
 
 add_library(tensorrt_cpp_api SHARED src/engine.cpp)
 # use rpath instead or runpath, because tensorrt libs has no runpath and rpath is transitive
@@ -33,3 +41,6 @@ target_link_libraries(tensorrt_cpp_api PUBLIC ${OpenCV_LIBS} ${CUDA_LIBRARIES} $
 
 add_executable(run_inference_benchmark src/benchmark.cpp)
 target_link_libraries(run_inference_benchmark tensorrt_cpp_api)
+
+add_executable(run_prediction_image src/main.cpp)
+target_link_libraries(run_prediction_image tensorrt_cpp_api argparse)
