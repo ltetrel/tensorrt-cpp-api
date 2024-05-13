@@ -12,16 +12,26 @@ image_pre_transforms:
         std: [1.0, 1.0, 1.0]
 
 target_post_transforms:
-    Resize:
+    BoxConvert:
+        src_fmt: "cxcywh"
+    InvertNormalize:
+        mean: [0.0, 0.0]
+        std: [640.0, 640.0]
+    InvertResize:
         method: "maintain_ar"
-        size: [640, 640]
+        size: [null, null]
     NMS:
         max_overlap: 0.50
         nms_scale_factor: 1.0
         output_scale_factor: 1.0
-        threshold: 0.010
+        threshold: 0.3
 
 labels:
     - "Scallop"
     - "cucumaria_frondosa"
     - "cucumaria_frondosa_juv"
+
+colors:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
