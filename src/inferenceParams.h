@@ -10,16 +10,23 @@ struct Resize{
     size_t width = 640;
 };
 
+
 struct Normalize{
     // Carefull with normalization parameters:
     // https://discuss.pytorch.org/t/discussion-why-normalise-according-to-imagenet-mean-and-std-dev-for-transfer-learning/115670/7
-    std::array<float, 3> mean = {0.485, 0.456, 0.406};
-    std::array<float, 3> std = {0.229, 0.224, 0.225};
+    std::vector<float> mean = {0.485, 0.456, 0.406};
+    std::vector<float> std = {0.229, 0.224, 0.225};
 };
 
 struct ToDtype{
     std::string dtype = "float";
     bool scale = true;
+};
+
+struct BoxConvert{
+    // can be either "xyxy", "cxcywh" or "xywh"
+    std::string srcFmt = "xyxy";
+    std::string tgtFmt = "xywh";
 };
 
 struct NMS{
@@ -36,14 +43,22 @@ struct ImagePreTransforms{
 };
 
 struct TargetPostTransforms{
+    BoxConvert boxConvert = {"cxcywh"};
+    Normalize invertNormalize = {{0.f, 0.f}, {640.f, 640.f}};
     Resize invertResize = {};
-    const NMS nms = {0.010, 0.50, 1.0, 1.0};
+    const NMS nms = {0.4, 0.1, 1.0, 1.0};
 };
 
 const std::vector<std::string> classLabels = {
     "Scallop",
     "cucumaria_frondosa",
     "cucumaria_frondosa_juv"
+};
+
+const std::vector<std::vector<float>> colors = {
+    {1.f, 0.f, 0.f},
+    {0.f, 1.f, 0.f},
+    {0.f, 0.f, 1.f}
 };
 
 };

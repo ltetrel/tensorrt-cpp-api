@@ -6,6 +6,46 @@
 #include "inferenceParams.h"
 
 
+namespace {
+
+void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, unsigned int scale) {
+    // Bounding boxes and annotations
+    for (auto &object : objects) {
+        // Choose the color
+        int colorIndex = object.label % inferenceParams::colors.size(); // We have only defined 80 unique colors
+        cv::Scalar color = cv::Scalar(inferenceParams::colors[colorIndex][0], inferenceParams::colors[colorIndex][1], inferenceParams::colors[colorIndex][2]);
+        float meanColor = cv::mean(color)[0];
+        cv::Scalar txtColor;
+        if (meanColor > 0.5) {
+            txtColor = cv::Scalar(0, 0, 0);
+        } else {
+            txtColor = cv::Scalar(255, 255, 255);
+        }
+
+        const auto &rect = object.rect;
+
+        // Draw rectangles and text
+        char text[256];
+        sprintf(text, "%s %.1f%%", inferenceParams::classLabels[object.label].c_str(), object.probability * 100);
+
+        int baseLine = 0;
+        cv::Size labelSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, scale, &baseLine);
+
+        cv::Scalar txt_bk_color = color * 0.7 * 255;
+
+        int x = object.rect.x;
+        int y = object.rect.y + 1;
+
+        cv::rectangle(image, rect, color * 255, scale + 1);
+
+        cv::rectangle(image, cv::Rect(cv::Point(x, y), cv::Size(labelSize.width, labelSize.height + baseLine)), txt_bk_color, -1);
+
+        cv::putText(image, text, cv::Point(x, y + labelSize.height), cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, txtColor, scale);
+    }
+}
+
+}
+
 int main(int argc, char *argv[]) {
     // Parse the command line arguments
     argparse::ArgumentParser program(argv[0], argparseUtils::appVersion);
@@ -49,9 +89,14 @@ int main(int argc, char *argv[]) {
     inferenceParams::TargetPostTransforms targetPostTransforms;
 
     // Build the onnx model into a TensorRT engine file.
+    std::array<float, 3> imgSubVals;
+    std::array<float, 3> imgDivVals;
+    std::copy_n(imagePreTransforms.normalize.mean.begin(), 3, imgSubVals.begin());
+    std::copy_n(imagePreTransforms.normalize.std.begin(), 3, imgDivVals.begin());
+    //TODO: normalization should be done in a separate function as for postprocessing
     bool succ = engine.build(modelPath,
-        imagePreTransforms.normalize.mean,
-        imagePreTransforms.normalize.std,
+        imgSubVals,
+        imgDivVals,
         imagePreTransforms.toDtype.scale);
     if (!succ) {
         throw std::runtime_error("Unable to build TRT engine.");
@@ -64,7 +109,7 @@ int main(int argc, char *argv[]) {
     }
 
     // ********************
-    // Input pre-processing
+    // Image pre-processing
     // ********************
 
     // Read the input image
@@ -116,8 +161,8 @@ int main(int argc, char *argv[]) {
             for (auto j = 0; j < options.optBatchSize; ++j) {
                 cv::Mat outImg;
                 cv::cuda::GpuMat gpuImg = inputs[0][j];
-                float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(gpuImg.cols);
-                float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(gpuImg.rows);
+                float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
+                float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
                 if (targetPostTransforms.invertResize.method == "maintain_ar"){
                     rx = std::max(rx, ry);
                     ry = rx;
@@ -153,7 +198,91 @@ int main(int argc, char *argv[]) {
         }
     }
 
-//     // TODO: If your model requires post processing (ex. convert feature vector into bounding boxes) then you would do so here.
+    // **********************
+    // Target post-processing
+    // **********************
+
+    const auto& outputDims = engine.getOutputDims();
+    unsigned int featureBboxIdx = 0;
+    unsigned int featureConfsIdx = 1;
+    const auto& boxesShape = outputDims[featureBboxIdx];
+    const auto& confsShape = outputDims[featureConfsIdx];
+    size_t numAnchors = boxesShape.d[1];
+    size_t numClasses = confsShape.d[2];
+
+    std::vector<cv::Rect> bboxes;
+    std::vector<float> scores;
+    std::vector<int> labels;
+    std::vector<int> nmsIndices;
+
+    // Get all the YOLO proposals
+    for (size_t i = 0; i < numAnchors; i++) {
+        // Get bbox info
+        int batchId = 0;
+        const auto currBboxPtr = &featureVectors[batchId][featureBboxIdx][i*4];
+        const auto currScoresPtr = &featureVectors[batchId][featureConfsIdx][i*numClasses];
+        auto bestScorePtr = std::max_element(currScoresPtr, currScoresPtr+numClasses);
+        float bestScore = *bestScorePtr;
+        // convert to cv::Rect_ format
+        float x, y, w, h;
+        if (targetPostTransforms.boxConvert.srcFmt == "cxcywh"){
+            x = (*currBboxPtr - *(currBboxPtr+2) / 2.f);
+            y = (*(currBboxPtr+1) - *(currBboxPtr+3) / 2.f);
+            w = *(currBboxPtr+2);
+            h = *(currBboxPtr+3);
+        }
+        else{
+            std::cout << "Box conversion other than \"cxcywh\" not implemented yet!" << imagePath << std::endl;
+            return -1;
+        }
+        // invert normalize bbox from [0.0 - 1.0] to [0.0 - netwh]
+        auto subVals = targetPostTransforms.invertNormalize.mean;
+        auto divVals = targetPostTransforms.invertNormalize.std;
+        x = x * divVals[0] + subVals[0];
+        y = y * divVals[1] + subVals[1];
+        w = w * divVals[0] + subVals[0];
+        h = h * divVals[1] + subVals[1];
+        // resize bboxes
+        float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
+        float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
+        if (targetPostTransforms.invertResize.method == "maintain_ar"){
+                rx = std::max(rx, ry);
+                ry = rx;
+        }
+        x = x * rx;
+        y = y * ry;
+        w = w * rx;
+        h = h * ry;
+        // get label and instanciate bbox
+        int label = bestScorePtr - currScoresPtr;
+        cv::Rect2f bbox;
+        bbox.x = x;
+        bbox.y = y;
+        bbox.width = w;
+        bbox.height = h;
+
+        bboxes.push_back(bbox);
+        labels.push_back(label);
+        scores.push_back(bestScore);
+    }
+
+    // Run NMS
+    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, targetPostTransforms.nms.threshold, targetPostTransforms.nms.maxOverlap, nmsIndices);
+    std::vector<AnnotItem> annotItems;
+    for (auto& currIdx : nmsIndices) {
+        AnnotItem item{};
+        item.probability = scores[currIdx];
+        item.label = labels[currIdx];
+        item.rect = bboxes[currIdx];
+        annotItems.push_back(item);
+    }
+
+    // save annotated image
+    drawObjectLabels(cpuImg, annotItems, 1.0);
+    std::filesystem::path outputImagePath = Util::getDirPath(imagePath);
+    outputImagePath = outputImagePath.append("annotated.jpg");
+    cv::imwrite(outputImagePath, cpuImg);
+    std::cout << "Saved annotated image to: " << outputImagePath << std::endl;
 
     return 0;
 }

@@ -56,6 +56,15 @@ enum class Precision {
     INT8,
 };
 
+struct AnnotItem {
+    // The object class.
+    int label{};
+    // The detection's confidence probability.
+    float probability{};
+    // The object bounding box rectangle.
+    cv::Rect_<float> rect;
+};
+
 // Options for the network
 struct Options {
     // Precision to use for GPU inference.
