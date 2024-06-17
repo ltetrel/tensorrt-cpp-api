@@ -1,5 +1,6 @@
 #include <chrono>
 #include <opencv2/cudaimgproc.hpp>
+#include <fstream>
 
 #include "engine.h"
 #include "argparseUtils.h"
@@ -70,6 +71,14 @@ int main(int argc, char *argv[]) {
         std::cout << "Error: Unable to find file at path: " << imagePath << std::endl;
         return -1;
     }
+
+
+    //TODO: VIAME end-to-end workflow:
+    // https://github.com/Kitware/kwiver/blob/a789225ad89bcef5719b80f8bde207cefb70d608/arrows/darknet/darknet_detector.cxx#L413
+    // https://github.com/VIAME/darknet/blob/91118ec415ff18c154fb9ea570012021ac0a26f2/include/yolo_v2_class.hpp#L110
+    // https://github.com/VIAME/darknet/blob/91118ec415ff18c154fb9ea570012021ac0a26f2/src/yolo_v2_class.cpp#L270
+    // https://github.com/VIAME/darknet/blob/1dce4e451a632c2f49fc78e0b9ad02572b84dc34/src/network.c#L761
+
 
     // **************************
     // Model loading and building
@@ -153,34 +162,51 @@ int main(int argc, char *argv[]) {
     #ifndef NDEBUG
         cv::Mat preprocImage;
         inputs[0][0].download(preprocImage);
-        cv::cvtColor(preprocImage, preprocImage, cv::COLOR_RGB2BGR);
-        cv::imwrite("test.png", preprocImage);
+        // cv::cvtColor(preprocImage, preprocImage, cv::COLOR_RGB2BGR);
+        cv::imwrite("preprocImage.png", preprocImage);
 
-        // check post process
-        for (const auto & inputDim : inputDims) {
-            for (auto j = 0; j < options.optBatchSize; ++j) {
-                cv::Mat outImg;
-                cv::cuda::GpuMat gpuImg = inputs[0][j];
-                float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
-                float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
-                if (targetPostTransforms.invertResize.method == "maintain_ar"){
-                    rx = std::max(rx, ry);
-                    ry = rx;
-                }
-                cv::cuda::resize(gpuImg, gpuImg, cv::Size(), rx, ry);
-                if (targetPostTransforms.invertResize.method == "maintain_ar"){
-                    cv::Rect myROI(0, 0, targetPostTransforms.invertResize.width, targetPostTransforms.invertResize.height);
-                    gpuImg = gpuImg(myROI);
-                }
-                gpuImg.download(outImg);
-                cv::cvtColor(outImg, outImg, cv::COLOR_RGB2BGR);
-                cv::imwrite("test_invert_preproc.png", outImg);
-            }
-        }
+        auto cpuInput = cv::imread("test.png");
+        cv::cuda::GpuMat gpuInput;
+        gpuInput.upload(cpuInput);
+        inputs[0][0] = gpuInput;
+
+    // // check post process
+    //     for (const auto & inputDim : inputDims) {
+    //         for (auto j = 0; j < options.optBatchSize; ++j) {
+    //             cv::Mat outImg;
+    //             cv::cuda::GpuMat gpuImg = inputs[0][j];
+    //             float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
+    //             float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
+    //             if (targetPostTransforms.invertResize.method == "maintain_ar"){
+    //                 rx = std::max(rx, ry);
+    //                 ry = rx;
+    //             }
+    //             cv::cuda::resize(gpuImg, gpuImg, cv::Size(), rx, ry);
+    //             if (targetPostTransforms.invertResize.method == "maintain_ar"){
+    //                 cv::Rect myROI(0, 0, targetPostTransforms.invertResize.width, targetPostTransforms.invertResize.height);
+    //                 gpuImg = gpuImg(myROI);
+    //             }
+    //             gpuImg.download(outImg);
+    //             cv::cvtColor(outImg, outImg, cv::COLOR_RGB2BGR);
+    //             cv::imwrite("test_invert_preproc.png", outImg);
+    //         }
+    //     }
     #endif
+   
+    //TODO: darknet specific
+    cv::cuda::cvtColor(inputs[0][0], inputs[0][0], cv::COLOR_RGB2BGR);
 
     std::vector<std::vector<std::vector<float>>> featureVectors;
     engine.runInference(inputs, featureVectors);
+
+    #ifndef NDEBUG
+    std::ofstream boxes_file("./inputs/boxes.txt");
+    std::ofstream labels_file("./inputs/labels.txt");
+    std::ostream_iterator<float> output_iterator_boxes(boxes_file, "\n");
+    std::ostream_iterator<float> output_iterator_labels(labels_file, "\n");
+    std::copy(featureVectors[0][0].begin(), featureVectors[0][0].end(), output_iterator_boxes);
+    std::copy(featureVectors[0][1].begin(), featureVectors[0][1].end(), output_iterator_labels);
+    #endif
 
     // Print the feature vectors
     for (size_t batch = 0; batch < featureVectors.size(); ++batch) {
@@ -202,13 +228,16 @@ int main(int argc, char *argv[]) {
     // Target post-processing
     // **********************
 
+    inferenceParams::Model model;
     const auto& outputDims = engine.getOutputDims();
     unsigned int featureBboxIdx = 0;
-    unsigned int featureConfsIdx = 1;
+    unsigned int featureProbsIdx = 1;
+    unsigned int featureConfsIdx = 2;
     const auto& boxesShape = outputDims[featureBboxIdx];
-    const auto& confsShape = outputDims[featureConfsIdx];
+    const auto& probsShape = outputDims[featureProbsIdx];
+
     size_t numAnchors = boxesShape.d[1];
-    size_t numClasses = confsShape.d[2];
+    size_t numClasses = probsShape.d[2];
 
     std::vector<cv::Rect> bboxes;
     std::vector<float> scores;
@@ -220,9 +249,21 @@ int main(int argc, char *argv[]) {
         // Get bbox info
         int batchId = 0;
         const auto currBboxPtr = &featureVectors[batchId][featureBboxIdx][i*4];
-        const auto currScoresPtr = &featureVectors[batchId][featureConfsIdx][i*numClasses];
+        const auto currScoresPtr = &featureVectors[batchId][featureProbsIdx][i*numClasses];
         auto bestScorePtr = std::max_element(currScoresPtr, currScoresPtr+numClasses);
         float bestScore = *bestScorePtr;
+        // thresholding on classe probs
+        if (bestScore < targetPostTransforms.threshold.prob){
+            continue;
+        }
+        // thresholding on classe confidences (objectness) and prob update
+        if (model.type == "darknet"){
+            float conf = featureVectors[batchId][featureConfsIdx][i];
+            if (conf <  targetPostTransforms.threshold.conf){
+                continue;
+            }
+            bestScore = bestScore * conf;
+        }
         // convert to cv::Rect_ format
         float x, y, w, h;
         if (targetPostTransforms.boxConvert.srcFmt == "cxcywh"){
@@ -267,7 +308,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Run NMS
-    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, targetPostTransforms.nms.threshold, targetPostTransforms.nms.maxOverlap, nmsIndices);
+    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, targetPostTransforms.nms.maxOverlap, nmsIndices);
     std::vector<AnnotItem> annotItems;
     for (auto& currIdx : nmsIndices) {
         AnnotItem item{};

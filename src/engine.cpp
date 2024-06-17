@@ -439,6 +439,12 @@ bool Engine::runInference(const std::vector<std::vector<cv::cuda::GpuMat>> &inpu
 cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& batchInput, const std::array<float, 3>& subVals, const std::array<float, 3>& divVals, bool normalize) {
     cv::cuda::GpuMat gpu_dst(1, batchInput[0].rows * batchInput[0].cols * batchInput.size(), CV_8UC3);
 
+    #ifndef NDEBUG
+    cv::Mat cpuInput;
+    batchInput[0].download(cpuInput);
+    unsigned char * ucharInputData = (unsigned char *)cpuInput.data;
+    #endif
+
     size_t width = batchInput[0].cols * batchInput[0].rows;
     for (size_t img = 0; img < batchInput.size(); img++) {
         std::vector<cv::cuda::GpuMat> input_channels{
@@ -449,6 +455,12 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
         };
         cv::cuda::split(batchInput[img], input_channels);  // HWC -> CHW
     }
+
+    #ifndef NDEBUG
+    cv::Mat gpu_dstCPU;
+    gpu_dst.download(gpu_dstCPU);
+    unsigned char * ucharData = (unsigned char *)gpu_dstCPU.data;
+    #endif
 
     cv::cuda::GpuMat mfloat;
     if (normalize) {
@@ -462,6 +474,12 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
     // Apply scaling and mean subtraction
     cv::cuda::subtract(mfloat, cv::Scalar(subVals[0], subVals[1], subVals[2]), mfloat, cv::noArray(), -1);
     cv::cuda::divide(mfloat, cv::Scalar(divVals[0], divVals[1], divVals[2]), mfloat, 1, -1);
+
+    #ifndef NDEBUG
+    cv::Mat mfloatCPU;
+    mfloat.download(mfloatCPU);
+    float* floatData = (float*)mfloatCPU.data;
+    #endif
 
     return mfloat;
 }

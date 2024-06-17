@@ -29,8 +29,12 @@ struct BoxConvert{
     std::string tgtFmt = "xywh";
 };
 
+struct Threshold{
+    float prob = 0.2; // class probability
+    float conf = 0.1; // probability for an object to exists (yolo objectness)
+};
+
 struct NMS{
-    float threshold = 0.010;
     float maxOverlap = 0.50;
     float nmsScaleFactor = 1.0;
     float outputScaleFactor = 1.0;
@@ -43,10 +47,15 @@ struct ImagePreTransforms{
 };
 
 struct TargetPostTransforms{
-    BoxConvert boxConvert = {"cxcywh"};
-    Normalize invertNormalize = {{0.f, 0.f}, {640.f, 640.f}};
+    const BoxConvert boxConvert = {"cxcywh"};
+    const Normalize invertNormalize = {{0.f, 0.f}, {640.f, 640.f}};
     Resize invertResize = {};
-    const NMS nms = {0.4, 0.1, 1.0, 1.0};
+    const Threshold threshold = {0.3, 0.010};
+    const NMS nms = {0.5, 1.0, 1.0};
+};
+
+struct Model{
+    std::string type = "darknet";
 };
 
 const std::vector<std::string> classLabels = {

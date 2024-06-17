@@ -20,11 +20,16 @@ target_post_transforms:
     InvertResize:
         method: "maintain_ar"
         size: [null, null]
+    Thresholding:
+        obj_thresh: 0.01 #block detector:darknet :thresh  
+        prob_thresh: 0.3
     NMS:
         max_overlap: 0.50
         nms_scale_factor: 1.0
         output_scale_factor: 1.0
-        threshold: 0.3
+
+model:
+    type: "darknet"
 
 labels:
     - "Scallop"
