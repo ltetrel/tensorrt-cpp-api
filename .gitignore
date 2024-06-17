@@ -32,8 +32,16 @@
 *.out
 *.app
 
+# IDE
+.idea/
+.vscode/
+
+# build output
 build*/
 cmake-build-*
-.idea/
 
+# Files
 *.onnx
+*.png
+inputs/
+models/
