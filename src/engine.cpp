@@ -380,7 +380,7 @@ bool Engine::runInference(const std::vector<std::vector<cv::cuda::GpuMat>> &inpu
         nvinfer1::Dims4 inputDims = {batchSize, dims.d[0], dims.d[1], dims.d[2]};
         m_context->setInputShape(m_IOTensorNames[i].c_str(), inputDims); // Define the batch size
 
-        // OpenCV reads images into memory in NHWC format, while TensorRT expects images in NCHW format. 
+        // OpenCV reads images into memory in NHWC format, while TensorRT expects images in NCHW format.
         // The following method converts NHWC to NCHW.
         // Even though TensorRT expects NCHW at IO, during optimization, it can internally use NHWC to optimize cuda kernels
         // See: https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#data-layout
@@ -445,6 +445,7 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
     unsigned char * ucharInputData = (unsigned char *)cpuInput.data;
     #endif
 
+    //TODO : use instead TensorFormat https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#reformat-free-network-tensors
     size_t width = batchInput[0].cols * batchInput[0].rows;
     for (size_t img = 0; img < batchInput.size(); img++) {
         std::vector<cv::cuda::GpuMat> input_channels{

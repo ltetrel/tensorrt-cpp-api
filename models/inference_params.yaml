@@ -1,28 +1,32 @@
+%YAML:1.0
 #converted from detector.pipe 2024-04-22T14:29:44
+#TODO add viame version
 image_pre_transforms:
-    Resize:
+    ResizeImg:
         method: "maintain_ar"
         height: 640
         width: 640
-    ToDtype: #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
+    ConvertColor:
+        model: "BGR"  #darknet specific which requires BGR input
+    ToDtypeImg:  #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
         dtype: "float"
         scale: true
-    Normalize:
+    NormalizeImg:
         mean: [0.0, 0.0, 0.0]
         std: [1.0, 1.0, 1.0]
 
 target_post_transforms:
-    BoxConvert:
+    FilterBoxes:
+        thresh: 0.01  #block detector:darknet :thresh
+    ConvertBox:
         src_fmt: "cxcywh"
-    InvertNormalize:
-        mean: [0.0, 0.0]
-        std: [640.0, 640.0]
-    InvertResize:
-        method: "maintain_ar"
-        size: [null, null]
-    Thresholding:
-        obj_thresh: 0.01 #block detector:darknet :thresh  
-        prob_thresh: 0.3
+    RescaleBox:
+        offset: [0.0, 0.0]
+        scale: [640.0, 640.0]
+    ResizeBox:
+        inp_size: [640, 640]
+        tgt_size: [null, null]
+        method: null
     NMS:
         max_overlap: 0.50
         nms_scale_factor: 1.0

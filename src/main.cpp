@@ -5,6 +5,8 @@
 #include "engine.h"
 #include "argparseUtils.h"
 #include "inferenceParams.h"
+#include "inferenceParams2.h"
+#include "transforms.h"
 
 
 namespace {
@@ -72,14 +74,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-
-    //TODO: VIAME end-to-end workflow:
-    // https://github.com/Kitware/kwiver/blob/a789225ad89bcef5719b80f8bde207cefb70d608/arrows/darknet/darknet_detector.cxx#L413
-    // https://github.com/VIAME/darknet/blob/91118ec415ff18c154fb9ea570012021ac0a26f2/include/yolo_v2_class.hpp#L110
-    // https://github.com/VIAME/darknet/blob/91118ec415ff18c154fb9ea570012021ac0a26f2/src/yolo_v2_class.cpp#L270
-    // https://github.com/VIAME/darknet/blob/1dce4e451a632c2f49fc78e0b9ad02572b84dc34/src/network.c#L761
-
-
     // **************************
     // Model loading and building
     // **************************
@@ -96,6 +90,7 @@ int main(int argc, char *argv[]) {
     //TODO: initialization from file `models/params.yaml`
     inferenceParams::ImagePreTransforms imagePreTransforms;
     inferenceParams::TargetPostTransforms targetPostTransforms;
+    inferenceParams2::TargetPostTransforms targetPostTransformsv2;
 
     // Build the onnx model into a TensorRT engine file.
     std::array<float, 3> imgSubVals;
@@ -117,6 +112,8 @@ int main(int argc, char *argv[]) {
         throw std::runtime_error("Unable to load TRT engine.");
     }
 
+    preciseStopwatch stopwatch;
+
     // ********************
     // Image pre-processing
     // ********************
@@ -132,6 +129,7 @@ int main(int argc, char *argv[]) {
     targetPostTransforms.invertResize.method = imagePreTransforms.resize.method;
     targetPostTransforms.invertResize.height = cpuImg.rows;
     targetPostTransforms.invertResize.width = cpuImg.cols;
+    targetPostTransformsv2.resize.tgtSize = cpuImg.size();
 
     // Upload the image GPU memory and convert from BGR to RGB
     cv::cuda::GpuMat gpuImg;
@@ -169,28 +167,6 @@ int main(int argc, char *argv[]) {
         cv::cuda::GpuMat gpuInput;
         gpuInput.upload(cpuInput);
         inputs[0][0] = gpuInput;
-
-    // // check post process
-    //     for (const auto & inputDim : inputDims) {
-    //         for (auto j = 0; j < options.optBatchSize; ++j) {
-    //             cv::Mat outImg;
-    //             cv::cuda::GpuMat gpuImg = inputs[0][j];
-    //             float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
-    //             float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
-    //             if (targetPostTransforms.invertResize.method == "maintain_ar"){
-    //                 rx = std::max(rx, ry);
-    //                 ry = rx;
-    //             }
-    //             cv::cuda::resize(gpuImg, gpuImg, cv::Size(), rx, ry);
-    //             if (targetPostTransforms.invertResize.method == "maintain_ar"){
-    //                 cv::Rect myROI(0, 0, targetPostTransforms.invertResize.width, targetPostTransforms.invertResize.height);
-    //                 gpuImg = gpuImg(myROI);
-    //             }
-    //             gpuImg.download(outImg);
-    //             cv::cvtColor(outImg, outImg, cv::COLOR_RGB2BGR);
-    //             cv::imwrite("test_invert_preproc.png", outImg);
-    //         }
-    //     }
     #endif
    
     //TODO: darknet specific
@@ -243,72 +219,51 @@ int main(int argc, char *argv[]) {
     std::vector<float> scores;
     std::vector<int> labels;
     std::vector<int> nmsIndices;
+    int batchId = 0;  //TODO: manage batch size
 
-    // Get all the YOLO proposals
-    for (size_t i = 0; i < numAnchors; i++) {
-        // Get bbox info
-        int batchId = 0;
-        const auto currBboxPtr = &featureVectors[batchId][featureBboxIdx][i*4];
-        const auto currScoresPtr = &featureVectors[batchId][featureProbsIdx][i*numClasses];
-        auto bestScorePtr = std::max_element(currScoresPtr, currScoresPtr+numClasses);
-        float bestScore = *bestScorePtr;
-        // thresholding on classe probs
-        if (bestScore < targetPostTransforms.threshold.prob){
-            continue;
-        }
-        // thresholding on classe confidences (objectness) and prob update
-        if (model.type == "darknet"){
-            float conf = featureVectors[batchId][featureConfsIdx][i];
-            if (conf <  targetPostTransforms.threshold.conf){
-                continue;
-            }
-            bestScore = bestScore * conf;
-        }
-        // convert to cv::Rect_ format
-        float x, y, w, h;
-        if (targetPostTransforms.boxConvert.srcFmt == "cxcywh"){
-            x = (*currBboxPtr - *(currBboxPtr+2) / 2.f);
-            y = (*(currBboxPtr+1) - *(currBboxPtr+3) / 2.f);
-            w = *(currBboxPtr+2);
-            h = *(currBboxPtr+3);
-        }
-        else{
-            std::cout << "Box conversion other than \"cxcywh\" not implemented yet!" << imagePath << std::endl;
-            return -1;
-        }
-        // invert normalize bbox from [0.0 - 1.0] to [0.0 - netwh]
-        auto subVals = targetPostTransforms.invertNormalize.mean;
-        auto divVals = targetPostTransforms.invertNormalize.std;
-        x = x * divVals[0] + subVals[0];
-        y = y * divVals[1] + subVals[1];
-        w = w * divVals[0] + subVals[0];
-        h = h * divVals[1] + subVals[1];
-        // resize bboxes
-        float rx = static_cast<float>(targetPostTransforms.invertResize.width)/static_cast<float>(imagePreTransforms.resize.width);
-        float ry = static_cast<float>(targetPostTransforms.invertResize.height)/static_cast<float>(imagePreTransforms.resize.height);
-        if (targetPostTransforms.invertResize.method == "maintain_ar"){
-                rx = std::max(rx, ry);
-                ry = rx;
-        }
-        x = x * rx;
-        y = y * ry;
-        w = w * rx;
-        h = h * ry;
-        // get label and instanciate bbox
-        int label = bestScorePtr - currScoresPtr;
+    // initialize valid bboxes from range
+    std::vector<unsigned int> validBoxIds(featureVectors[batchId][featureConfsIdx].size());
+    std::iota(validBoxIds.begin(), validBoxIds.end(), 0);
+
+    if (model.type == "darknet"){
+        validBoxIds = Transforms::getValidBoxIds(
+            featureVectors[batchId][featureConfsIdx], targetPostTransformsv2.filterBoxes.thresh);
+    }
+
+    // loop through all valid boxes
+    for (const unsigned int validBoxId: validBoxIds) {
+        // Get current bbox info
+        const auto currBboxPtr = &featureVectors[batchId][featureBboxIdx][validBoxId*4];
+        const auto currProbPtr = &featureVectors[batchId][featureProbsIdx][validBoxId*numClasses];
+        const auto currConfPtr = &featureVectors[batchId][featureConfsIdx][validBoxId];
+        auto bestProbPtr = std::max_element(currProbPtr, currProbPtr+numClasses);
+        float bestProb = *bestProbPtr;
+        float conf = *currConfPtr;
+        const cv::Vec4f inp = {*currBboxPtr, *(currBboxPtr+1), *(currBboxPtr+2), *(currBboxPtr+3)};
+        float score = conf * bestProb;
+        int label = bestProbPtr - currProbPtr;
+        // box post processing
+        const cv::Vec4f converted = Transforms::convertBox(inp, targetPostTransformsv2.convert.srcFmt);
+        const cv::Vec4f rescaled = Transforms::rescaleBox(
+            converted, targetPostTransformsv2.rescale.offset, targetPostTransformsv2.rescale.scale);
+        const cv::Vec4f resized = Transforms::resizeBox(
+            rescaled,
+            targetPostTransformsv2.resize.inpSize,
+            targetPostTransformsv2.resize.tgtSize,
+            targetPostTransformsv2.resize.method);
         cv::Rect2f bbox;
-        bbox.x = x;
-        bbox.y = y;
-        bbox.width = w;
-        bbox.height = h;
+        bbox.x = resized[0];
+        bbox.y = resized[1];
+        bbox.width = resized[2];
+        bbox.height = resized[3];
 
         bboxes.push_back(bbox);
         labels.push_back(label);
-        scores.push_back(bestScore);
+        scores.push_back(score);
     }
 
     // Run NMS
-    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, targetPostTransforms.nms.maxOverlap, nmsIndices);
+    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, targetPostTransformsv2.nms.maxOverlap, nmsIndices);
     std::vector<AnnotItem> annotItems;
     for (auto& currIdx : nmsIndices) {
         AnnotItem item{};
@@ -317,6 +272,9 @@ int main(int argc, char *argv[]) {
         item.rect = bboxes[currIdx];
         annotItems.push_back(item);
     }
+
+    auto totalElapsedTimeMs = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
+    std::cout << totalElapsedTimeMs << std::endl;
 
     // save annotated image
     drawObjectLabels(cpuImg, annotItems, 1.0);
