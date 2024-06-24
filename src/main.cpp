@@ -87,9 +87,10 @@ int main(int argc, char *argv[]) {
     Engine engine(options);
 
     // Define pre-processing options
-    //TODO: initialization from file `models/params.yaml`
+    //TODO: initialization from file `models/inference_params.yaml`
     inferenceParams::ImagePreTransforms imagePreTransforms;
     inferenceParams::TargetPostTransforms targetPostTransforms;
+    inferenceParams2::ImagePreTransforms imagePreTransformsv2;
     inferenceParams2::TargetPostTransforms targetPostTransformsv2;
 
     // Build the onnx model into a TensorRT engine file.
@@ -97,7 +98,6 @@ int main(int argc, char *argv[]) {
     std::array<float, 3> imgDivVals;
     std::copy_n(imagePreTransforms.normalize.mean.begin(), 3, imgSubVals.begin());
     std::copy_n(imagePreTransforms.normalize.std.begin(), 3, imgDivVals.begin());
-    //TODO: normalization should be done in a separate function as for postprocessing
     bool succ = engine.build(modelPath,
         imgSubVals,
         imgDivVals,
@@ -124,55 +124,39 @@ int main(int argc, char *argv[]) {
         throw std::runtime_error("Unable to read image at path: " + std::string(imagePath));
     }
 
-    //TODO: Define an invert transform for resizing
-    // Post processing invertResize takes input image size
-    targetPostTransforms.invertResize.method = imagePreTransforms.resize.method;
-    targetPostTransforms.invertResize.height = cpuImg.rows;
-    targetPostTransforms.invertResize.width = cpuImg.cols;
+    // Post processing box resizing takes input image size
     targetPostTransformsv2.resize.tgtSize = cpuImg.size();
+    targetPostTransformsv2.resize.method = imagePreTransformsv2.resize.method;
 
-    // Upload the image GPU memory and convert from BGR to RGB
+    // Upload the image GPU memory
     cv::cuda::GpuMat gpuImg;
     gpuImg.upload(cpuImg);
-    cv::cuda::cvtColor(gpuImg, gpuImg, cv::COLOR_BGR2RGB);
 
     // In the following section we populate the input vectors to later pass for inference
     const auto& inputDims = engine.getInputDims();
     std::vector<std::vector<cv::cuda::GpuMat>> inputs;
 
-    auto resized = gpuImg;
     // Loop through all inputs, standard detector (which is the case here) should have only one
     for (const auto & inputDim : inputDims) {
         std::vector<cv::cuda::GpuMat> input;
         for (auto j = 0; j < options.optBatchSize; ++j) {
-            if (imagePreTransforms.resize.method == "maintain_ar"){
-                resized = Engine::resizeKeepAspectRatioPadRightBottom(
-                    gpuImg, imagePreTransforms.resize.height, imagePreTransforms.resize.width);
-            } else if (imagePreTransforms.resize.method == "scale"){
-                cv::cuda::resize(gpuImg, resized, cv::Size(
-                    imagePreTransforms.resize.width, imagePreTransforms.resize.height));
-            }
+            const cv::cuda::GpuMat colored = Transforms::convertColorImg(gpuImg, ColorModel::BGR);
+            const cv::cuda::GpuMat resized = Transforms::resizeImg(
+                colored, imagePreTransformsv2.resize.tgtSize, imagePreTransformsv2.resize.method);
             input.emplace_back(std::move(resized));
         }
         inputs.emplace_back(std::move(input));
     }
 
     #ifndef NDEBUG
-        cv::Mat preprocImage;
-        inputs[0][0].download(preprocImage);
-        // cv::cvtColor(preprocImage, preprocImage, cv::COLOR_RGB2BGR);
-        cv::imwrite("preprocImage.png", preprocImage);
-
-        auto cpuInput = cv::imread("test.png");
-        cv::cuda::GpuMat gpuInput;
-        gpuInput.upload(cpuInput);
-        inputs[0][0] = gpuInput;
+    cv::Mat preprocImage;
+    inputs[0][0].download(preprocImage);
+    cv::imwrite("preprocImage.png", preprocImage);
     #endif
-   
-    //TODO: darknet specific
-    cv::cuda::cvtColor(inputs[0][0], inputs[0][0], cv::COLOR_RGB2BGR);
+
 
     std::vector<std::vector<std::vector<float>>> featureVectors;
+    //TODO: normalization should be done in a separate function as for postprocessing
     engine.runInference(inputs, featureVectors);
 
     #ifndef NDEBUG
@@ -251,6 +235,7 @@ int main(int argc, char *argv[]) {
             targetPostTransformsv2.resize.inpSize,
             targetPostTransformsv2.resize.tgtSize,
             targetPostTransformsv2.resize.method);
+        // output post-processed bbox
         cv::Rect2f bbox;
         bbox.x = resized[0];
         bbox.y = resized[1];

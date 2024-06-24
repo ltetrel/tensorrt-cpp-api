@@ -2,12 +2,12 @@
 #converted from detector.pipe 2024-04-22T14:29:44
 #TODO add viame version
 image_pre_transforms:
+    ConvertColor:
+        model: "BGR"  #darknet specific which requires BGR input
     ResizeImg:
         method: "maintain_ar"
         height: 640
         width: 640
-    ConvertColor:
-        model: "BGR"  #darknet specific which requires BGR input
     ToDtypeImg:  #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
         dtype: "float"
         scale: true

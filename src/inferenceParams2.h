@@ -60,8 +60,8 @@ struct NMS{
 };
 
 struct ImagePreTransforms{
-    const ResizeImg resize = {{640, 640}, ResizeMethod::maintain_ar};
     const ConvertColor convertColor = {ColorModel::BGR};
+    const ResizeImg resize = {{640, 640}, ResizeMethod::maintain_ar};
     const ToDtypeImg toDtype = {Precision::FP32, true};
     const NormalizeImg normalize = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
 };
