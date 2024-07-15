@@ -77,6 +77,8 @@ int main(int argc, char *argv[]) {
     // **************************
     // Model loading and building
     // **************************
+    //TensorRT documentation: https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/index.html
+    // https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/api/c_api/index.html
 
     // Specify our GPU inference configuration options
     Options options;

@@ -156,6 +156,8 @@ bool Engine::build(std::string onnxModelPath, const std::array<float, 3>& subVal
     // Set the precision level
     if (m_options.precision == Precision::FP16) {
         // Ensure the GPU supports FP16 inference
+        // re-formating data boundary can be actually counter-productive:
+        // https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/developer-guide/index.html#reformat-free-network-tensors
         if (!builder->platformHasFastFp16()) {
             throw std::runtime_error("Error: GPU does not support FP16 precision");
         }
@@ -383,7 +385,7 @@ bool Engine::runInference(const std::vector<std::vector<cv::cuda::GpuMat>> &inpu
         // OpenCV reads images into memory in NHWC format, while TensorRT expects images in NCHW format.
         // The following method converts NHWC to NCHW.
         // Even though TensorRT expects NCHW at IO, during optimization, it can internally use NHWC to optimize cuda kernels
-        // See: https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#data-layout
+        // See: https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/developer-guide/index.html#data-layout
         // Copy over the input data and perform the preprocessing
         auto mfloat = blobFromGpuMats(batchInput, m_subVals, m_divVals, m_normalize);
         auto *dataPointer = mfloat.ptr<void>();
@@ -439,13 +441,6 @@ bool Engine::runInference(const std::vector<std::vector<cv::cuda::GpuMat>> &inpu
 cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& batchInput, const std::array<float, 3>& subVals, const std::array<float, 3>& divVals, bool normalize) {
     cv::cuda::GpuMat gpu_dst(1, batchInput[0].rows * batchInput[0].cols * batchInput.size(), CV_8UC3);
 
-    #ifndef NDEBUG
-    cv::Mat cpuInput;
-    batchInput[0].download(cpuInput);
-    unsigned char * ucharInputData = (unsigned char *)cpuInput.data;
-    #endif
-
-    //TODO : use instead TensorFormat https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#reformat-free-network-tensors
     size_t width = batchInput[0].cols * batchInput[0].rows;
     for (size_t img = 0; img < batchInput.size(); img++) {
         std::vector<cv::cuda::GpuMat> input_channels{
@@ -456,12 +451,6 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
         };
         cv::cuda::split(batchInput[img], input_channels);  // HWC -> CHW
     }
-
-    #ifndef NDEBUG
-    cv::Mat gpu_dstCPU;
-    gpu_dst.download(gpu_dstCPU);
-    unsigned char * ucharData = (unsigned char *)gpu_dstCPU.data;
-    #endif
 
     cv::cuda::GpuMat mfloat;
     if (normalize) {
@@ -475,12 +464,6 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
     // Apply scaling and mean subtraction
     cv::cuda::subtract(mfloat, cv::Scalar(subVals[0], subVals[1], subVals[2]), mfloat, cv::noArray(), -1);
     cv::cuda::divide(mfloat, cv::Scalar(divVals[0], divVals[1], divVals[2]), mfloat, 1, -1);
-
-    #ifndef NDEBUG
-    cv::Mat mfloatCPU;
-    mfloat.download(mfloatCPU);
-    float* floatData = (float*)mfloatCPU.data;
-    #endif
 
     return mfloat;
 }

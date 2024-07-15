@@ -26,7 +26,7 @@ namespace Transforms {
 // image transforms
 cv::cuda::GpuMat resizeImg(const cv::cuda::GpuMat& inp, const cv::Size size, const ResizeMethod method);
 cv::cuda::GpuMat convertColorImg(const cv::cuda::GpuMat& inp, const ColorModel tgtModel);
-cv::cuda::GpuMat toDtypeImg(
+cv::cuda::GpuMat castImg(
     const cv::cuda::GpuMat& inp,
     const Precision dType = Precision::FP32,
     const bool scale = true);

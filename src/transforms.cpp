@@ -44,27 +44,63 @@ cv::cuda::GpuMat Transforms::convertColorImg(const cv::cuda::GpuMat& inp, const 
     return colored;
 }
 
-cv::cuda::GpuMat Transforms::toDtypeImg(const cv::cuda::GpuMat& inp, const Precision dType, const bool scale){
-    cv::cuda::GpuMat mat;
+cv::cuda::GpuMat Transforms::castImg(const cv::cuda::GpuMat& inp, const Precision dType, const bool scale){
+    cv::cuda::GpuMat converted;
+    double alpha = 1.0;
 
-    return mat;
-    // if (normalize) {
-    //     // [0.f, 1.f]
-    //     gpu_dst.convertTo(mfloat, CV_32FC3, 1.f / 255.f);
-    // } else {
-    //     // [0.f, 255.f]
-    //     gpu_dst.convertTo(mfloat, CV_32FC3);
-    // }
+    if (scale){
+        switch (inp.depth()){
+            case CV_8U:
+                alpha = 1. / static_cast<double>(std::numeric_limits<unsigned char>::max());
+                break;
+            case CV_8S:
+                alpha = 1. / static_cast<double>(std::numeric_limits<char>::max());
+                break;
+            case CV_16U:
+                alpha = 1. / static_cast<double>(std::numeric_limits<unsigned short>::max());
+                break;
+            case CV_16S:
+                alpha = 1. / static_cast<double>(std::numeric_limits<short>::max());
+                break;
+            case CV_32S:
+                alpha = 1. / static_cast<double>(std::numeric_limits<int>::max());
+                break;
+            case CV_32F:
+                alpha = 1. / static_cast<double>(std::numeric_limits<float>::max());
+                break;
+            case CV_64F:
+                alpha = 1. / std::numeric_limits<double>::max();
+                break;
+            default:
+                break;
+        }
+    }
+
+    switch (dType) {
+        case Precision::FP32:
+            inp.convertTo(converted, CV_32FC3, alpha);
+            break;
+        case Precision::INT8:
+            throw std::runtime_error("Will not cast to INT8 as TensorRT works best with FP32.\n"
+                "For more information see: "
+                "https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861"
+                "/developer-guide/index.html#reformat-free-network-tensors");
+            break;
+        default:
+            break;
+    }
+
+    return converted;
 }
 
 cv::cuda::GpuMat Transforms::normalizeImg(const cv::cuda::GpuMat& inp, const cv::Scalar mean, const cv::Scalar std){
-    cv::cuda::GpuMat mat;
+    cv::cuda::GpuMat normalized;
 
-    return mat;
-    // cv:Mat mfloat;
-
+    // // Apply scaling and mean subtraction
     // cv::cuda::subtract(mfloat, cv::Scalar(subVals[0], subVals[1], subVals[2]), mfloat, cv::noArray(), -1);
-    // cv::cuda::divide(mfloat, cv::Scalar(divVals[0], divVals[1], divVals[2]), mfloat, cv::noArray(), -1);
+    // cv::cuda::divide(mfloat, cv::Scalar(divVals[0], divVals[1], divVals[2]), mfloat, 1, -1);
+
+    return normalized;
 }
 
 std::vector<unsigned int> Transforms::getValidBoxIds(std::vector<float>& inp, float thresh){

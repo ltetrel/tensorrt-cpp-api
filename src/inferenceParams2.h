@@ -22,7 +22,7 @@ struct ConvertColor{
     ColorModel model = ColorModel::RGB;
 };
 
-struct ToDtypeImg{
+struct CastImg{
     Precision dtype = Precision::FP32;
     bool scale = true;
 };
@@ -62,7 +62,7 @@ struct NMS{
 struct ImagePreTransforms{
     const ConvertColor convertColor = {ColorModel::BGR};
     const ResizeImg resize = {{640, 640}, ResizeMethod::maintain_ar};
-    const ToDtypeImg toDtype = {Precision::FP32, true};
+    const CastImg toDtype = {Precision::FP32, true};
     const NormalizeImg normalize = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
 };
 
