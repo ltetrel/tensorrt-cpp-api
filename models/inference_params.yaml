@@ -8,7 +8,7 @@ image_pre_transforms:
         method: "maintain_ar"
         height: 640
         width: 640
-    ToDtypeImg:  #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
+    CastImg:  #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
         dtype: "float"
         scale: true
     NormalizeImg:
