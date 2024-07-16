@@ -5,7 +5,6 @@
 #include "engine.h"
 #include "argparseUtils.h"
 #include "inferenceParams.h"
-#include "inferenceParams2.h"
 #include "transforms.h"
 
 
@@ -90,20 +89,11 @@ int main(int argc, char *argv[]) {
 
     // Define pre-processing options
     //TODO: initialization from file `models/inference_params.yaml`
-    inferenceParams::ImagePreTransforms imagePreTransforms;
-    inferenceParams::TargetPostTransforms targetPostTransforms;
-    inferenceParams2::ImagePreTransforms imagePreTransformsv2;
-    inferenceParams2::TargetPostTransforms targetPostTransformsv2;
+    inferenceParams::ImagePreTransforms imagePreTransformsv2;
+    inferenceParams::TargetPostTransforms targetPostTransformsv2;
 
     // Build the onnx model into a TensorRT engine file.
-    std::array<float, 3> imgSubVals;
-    std::array<float, 3> imgDivVals;
-    std::copy_n(imagePreTransforms.normalize.mean.begin(), 3, imgSubVals.begin());
-    std::copy_n(imagePreTransforms.normalize.std.begin(), 3, imgDivVals.begin());
-    bool succ = engine.build(modelPath,
-        imgSubVals,
-        imgDivVals,
-        imagePreTransforms.toDtype.scale);
+    bool succ = engine.build(modelPath);
     if (!succ) {
         throw std::runtime_error("Unable to build TRT engine.");
     }
@@ -145,7 +135,11 @@ int main(int argc, char *argv[]) {
             const cv::cuda::GpuMat colored = Transforms::convertColorImg(gpuImg, ColorModel::BGR);
             const cv::cuda::GpuMat resized = Transforms::resizeImg(
                 colored, imagePreTransformsv2.resize.tgtSize, imagePreTransformsv2.resize.method);
-            input.emplace_back(std::move(resized));
+            const cv::cuda::GpuMat casted = Transforms::castImg(
+                resized, imagePreTransformsv2.cast.dtype, imagePreTransformsv2.cast.scale);
+            const cv::cuda::GpuMat normalized = Transforms::normalizeImg(
+                casted, imagePreTransformsv2.normalize.mean, imagePreTransformsv2.normalize.std);
+            input.emplace_back(std::move(normalized));
         }
         inputs.emplace_back(std::move(input));
     }
@@ -156,9 +150,7 @@ int main(int argc, char *argv[]) {
     cv::imwrite("preprocImage.png", preprocImage);
     #endif
 
-
     std::vector<std::vector<std::vector<float>>> featureVectors;
-    //TODO: normalization should be done in a separate function as for postprocessing
     engine.runInference(inputs, featureVectors);
 
     #ifndef NDEBUG
@@ -211,7 +203,7 @@ int main(int argc, char *argv[]) {
     std::vector<unsigned int> validBoxIds(featureVectors[batchId][featureConfsIdx].size());
     std::iota(validBoxIds.begin(), validBoxIds.end(), 0);
 
-    if (model.type == "darknet"){
+    if (model.type == inferenceParams::ModelType::darknet){
         validBoxIds = Transforms::getValidBoxIds(
             featureVectors[batchId][featureConfsIdx], targetPostTransformsv2.filterBoxes.thresh);
     }

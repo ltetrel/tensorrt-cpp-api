@@ -1,37 +1,56 @@
 #pragma once
 
+#include "transforms.h"
+
+// yaml reader
+
+// FileStorage fs("./models/inference_params.yaml", FileStorage::READ);
+//     Mat r;
+//     fs["data"] >> r;
+//     std::cout << r << std::endl;
+//     fs.release();
+
 namespace inferenceParams{
 
-struct Resize{
-    // defines resizing method ["maintain_ar" or "scale"]
-    std::string method = "scale";
+struct ResizeImg{
     // original height and width of the network
-    size_t height = 640;
-    size_t width = 640;
+    cv::Size tgtSize;
+    ResizeMethod method = ResizeMethod::scale; // defines resizing method ["maintain_ar" or "scale"]
 };
 
-
-struct Normalize{
-    // Carefull with normalization parameters:
-    // https://discuss.pytorch.org/t/discussion-why-normalise-according-to-imagenet-mean-and-std-dev-for-transfer-learning/115670/7
-    std::vector<float> mean = {0.485, 0.456, 0.406};
-    std::vector<float> std = {0.229, 0.224, 0.225};
+struct ConvertColor{
+    ColorModel model = ColorModel::RGB;
 };
 
-struct ToDtype{
-    std::string dtype = "float";
+struct CastImg{
+    Precision dtype = Precision::FP32;
     bool scale = true;
 };
 
-struct BoxConvert{
-    // can be either "xyxy", "cxcywh" or "xywh"
-    std::string srcFmt = "xyxy";
-    std::string tgtFmt = "xywh";
+struct NormalizeImg{
+    // Carefull with normalization parameters:
+    // https://discuss.pytorch.org/t/discussion-why-normalise-according-to-imagenet-mean-and-std-dev-for-transfer-learning/115670/7
+    cv::Vec3f mean = {0.485, 0.456, 0.406};
+    cv::Vec3f std = {0.229, 0.224, 0.225};
 };
 
-struct Threshold{
-    float prob = 0.2; // class probability
-    float conf = 0.1; // probability for an object to exists (yolo objectness)
+struct FilterBoxes{
+    float thresh = 0.1;  // probability for an object to exists (yolo objectness)
+};
+
+struct ConvertBox{
+    BoxFormat srcFmt = BoxFormat::xyxy;  // can be either "xyxy", "cxcywh" or "xywh"
+};
+
+struct RescaleBox{
+    cv::Vec2f offset = {0.f, 0.f};
+    cv::Vec2f scale = {1.f, 1.f};
+};
+
+struct ResizeBox{
+    cv::Size inpSize;
+    cv::Size tgtSize;
+    ResizeMethod method = ResizeMethod::scale;
 };
 
 struct NMS{
@@ -41,21 +60,27 @@ struct NMS{
 };
 
 struct ImagePreTransforms{
-    const Resize resize = {"maintain_ar", 640, 640};
-    const ToDtype toDtype = {"float", true};
-    const Normalize normalize = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
+    const ConvertColor convertColor = {ColorModel::BGR};
+    const ResizeImg resize = {{640, 640}, ResizeMethod::maintain_ar};
+    const CastImg cast = {Precision::FP32, true};
+    const NormalizeImg normalize = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
 };
 
 struct TargetPostTransforms{
-    const BoxConvert boxConvert = {"cxcywh"};
-    const Normalize invertNormalize = {{0.f, 0.f}, {640.f, 640.f}};
-    Resize invertResize = {};
-    const Threshold threshold = {0.3, 0.010};
+    const FilterBoxes filterBoxes = {0.01};
+    const ConvertBox convert = {BoxFormat::cxcywh};
+    const RescaleBox rescale = {{0.f, 0.f}, {640.f, 640.f}};
+    ResizeBox resize = {{640, 640}, {}, {}};
     const NMS nms = {0.5, 1.0, 1.0};
 };
 
+enum class ModelType{
+    darknet,
+    netharn,
+};
+
 struct Model{
-    std::string type = "darknet";
+    ModelType type = ModelType::darknet;
 };
 
 const std::vector<std::string> classLabels = {

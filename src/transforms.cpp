@@ -48,6 +48,13 @@ cv::cuda::GpuMat Transforms::castImg(const cv::cuda::GpuMat& inp, const Precisio
     cv::cuda::GpuMat converted;
     double alpha = 1.0;
 
+    if (dType != Precision::FP32){
+        throw std::runtime_error("Will cast only to FP32 as TensorRT works best with that.\n"
+            "For more information see: "
+            "https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861"
+            "/developer-guide/index.html#reformat-free-network-tensors");
+    }
+
     if (scale){
         switch (inp.depth()){
             case CV_8U:
@@ -72,23 +79,12 @@ cv::cuda::GpuMat Transforms::castImg(const cv::cuda::GpuMat& inp, const Precisio
                 alpha = 1. / std::numeric_limits<double>::max();
                 break;
             default:
+                alpha = 1.0;
                 break;
         }
     }
 
-    switch (dType) {
-        case Precision::FP32:
-            inp.convertTo(converted, CV_32FC3, alpha);
-            break;
-        case Precision::INT8:
-            throw std::runtime_error("Will not cast to INT8 as TensorRT works best with FP32.\n"
-                "For more information see: "
-                "https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861"
-                "/developer-guide/index.html#reformat-free-network-tensors");
-            break;
-        default:
-            break;
-    }
+    inp.convertTo(converted, CV_32FC3, alpha);
 
     return converted;
 }
@@ -96,9 +92,9 @@ cv::cuda::GpuMat Transforms::castImg(const cv::cuda::GpuMat& inp, const Precisio
 cv::cuda::GpuMat Transforms::normalizeImg(const cv::cuda::GpuMat& inp, const cv::Scalar mean, const cv::Scalar std){
     cv::cuda::GpuMat normalized;
 
-    // // Apply scaling and mean subtraction
-    // cv::cuda::subtract(mfloat, cv::Scalar(subVals[0], subVals[1], subVals[2]), mfloat, cv::noArray(), -1);
-    // cv::cuda::divide(mfloat, cv::Scalar(divVals[0], divVals[1], divVals[2]), mfloat, 1, -1);
+    // Apply scaling and mean subtraction
+    cv::cuda::subtract(inp, mean, normalized, cv::noArray(), -1);
+    cv::cuda::divide(normalized, std, normalized, 1, -1);
 
     return normalized;
 }
