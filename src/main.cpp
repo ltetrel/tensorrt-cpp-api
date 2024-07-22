@@ -4,18 +4,18 @@
 
 #include "engine.h"
 #include "argparseUtils.h"
-#include "inferenceParams.h"
 #include "transforms.h"
+#include "configParser.h"
 
 
 namespace {
 
-void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, unsigned int scale) {
+void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, unsigned int scale, CfgParser cfgParser) {
     // Bounding boxes and annotations
     for (auto &object : objects) {
         // Choose the color
-        int colorIndex = object.label % inferenceParams::colors.size(); // We have only defined 80 unique colors
-        cv::Scalar color = cv::Scalar(inferenceParams::colors[colorIndex][0], inferenceParams::colors[colorIndex][1], inferenceParams::colors[colorIndex][2]);
+        int colorIndex = object.label % cfgParser.aColors.size(); // We have only defined 80 unique colors
+        cv::Scalar color = cv::Scalar(cfgParser.aColors[colorIndex][0], cfgParser.aColors[colorIndex][1], cfgParser.aColors[colorIndex][2]);
         float meanColor = cv::mean(color)[0];
         cv::Scalar txtColor;
         if (meanColor > 0.5) {
@@ -28,7 +28,7 @@ void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, uns
 
         // Draw rectangles and text
         char text[256];
-        sprintf(text, "%s %.1f%%", inferenceParams::classLabels[object.label].c_str(), object.probability * 100);
+        sprintf(text, "%s %.1f%%", cfgParser.aLabels[object.label].c_str(), object.probability * 100);
 
         int baseLine = 0;
         cv::Size labelSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, scale, &baseLine);
@@ -62,14 +62,19 @@ int main(int argc, char *argv[]) {
     }
 
     std::filesystem::path modelPath = program.get<std::string>("--model");
+    std::filesystem::path cfgPath = program.get<std::string>("--cfg");
     std::filesystem::path imagePath = program.get<std::string>("--image");
     // Ensure the model and image files exists
     if (!std::filesystem::exists(modelPath)) {
-        std::cout << "Error: Unable to find file at path: " << modelPath << std::endl;
+        std::cout << "Error: Unable to find model at path: " << modelPath << std::endl;
+        return -1;
+    }
+    if (!std::filesystem::exists(cfgPath)) {
+        std::cout << "Error: Unable to find pipe at path: " << cfgPath << std::endl;
         return -1;
     }
     if (!std::filesystem::exists(imagePath)) {
-        std::cout << "Error: Unable to find file at path: " << imagePath << std::endl;
+        std::cout << "Error: Unable to find image at path: " << imagePath << std::endl;
         return -1;
     }
 
@@ -87,10 +92,9 @@ int main(int argc, char *argv[]) {
     options.maxBatchSize = 1; // Specify the maximum batch size we plan on running.
     Engine engine(options);
 
-    // Define pre-processing options
-    //TODO: initialization from file `models/inference_params.yaml`
-    inferenceParams::ImagePreTransforms imagePreTransformsv2;
-    inferenceParams::TargetPostTransforms targetPostTransformsv2;
+    // Parse inference config
+    cfgPath = "models/inference_params.yaml";
+    CfgParser cfgParser(cfgPath);
 
     // Build the onnx model into a TensorRT engine file.
     bool succ = engine.build(modelPath);
@@ -104,8 +108,6 @@ int main(int argc, char *argv[]) {
         throw std::runtime_error("Unable to load TRT engine.");
     }
 
-    preciseStopwatch stopwatch;
-
     // ********************
     // Image pre-processing
     // ********************
@@ -117,8 +119,9 @@ int main(int argc, char *argv[]) {
     }
 
     // Post processing box resizing takes input image size
-    targetPostTransformsv2.resize.tgtSize = cpuImg.size();
-    targetPostTransformsv2.resize.method = imagePreTransformsv2.resize.method;
+    cfgParser.mSetImgSize(cpuImg.size());
+
+    preciseStopwatch stopwatch;
 
     // Upload the image GPU memory
     cv::cuda::GpuMat gpuImg;
@@ -134,11 +137,11 @@ int main(int argc, char *argv[]) {
         for (auto j = 0; j < options.optBatchSize; ++j) {
             const cv::cuda::GpuMat colored = Transforms::convertColorImg(gpuImg, ColorModel::BGR);
             const cv::cuda::GpuMat resized = Transforms::resizeImg(
-                colored, imagePreTransformsv2.resize.tgtSize, imagePreTransformsv2.resize.method);
+                colored, cfgParser.aImagePreTransforms.resize.tgtSize, cfgParser.aImagePreTransforms.resize.method);
             const cv::cuda::GpuMat casted = Transforms::castImg(
-                resized, imagePreTransformsv2.cast.dtype, imagePreTransformsv2.cast.scale);
+                resized, cfgParser.aImagePreTransforms.cast.dtype, cfgParser.aImagePreTransforms.cast.scale);
             const cv::cuda::GpuMat normalized = Transforms::normalizeImg(
-                casted, imagePreTransformsv2.normalize.mean, imagePreTransformsv2.normalize.std);
+                casted, cfgParser.aImagePreTransforms.normalize.mean, cfgParser.aImagePreTransforms.normalize.std);
             input.emplace_back(std::move(normalized));
         }
         inputs.emplace_back(std::move(input));
@@ -150,8 +153,14 @@ int main(int argc, char *argv[]) {
     cv::imwrite("preprocImage.png", preprocImage);
     #endif
 
+    auto elps1 = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
+    std::cout << "preproc: " << elps1 << std::endl;
+
     std::vector<std::vector<std::vector<float>>> featureVectors;
     engine.runInference(inputs, featureVectors);
+
+    auto elps2 = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
+    std::cout << "infer: " << elps2 << std::endl;
 
     #ifndef NDEBUG
     std::ofstream boxes_file("./inputs/boxes.txt");
@@ -182,7 +191,6 @@ int main(int argc, char *argv[]) {
     // Target post-processing
     // **********************
 
-    inferenceParams::Model model;
     const auto& outputDims = engine.getOutputDims();
     unsigned int featureBboxIdx = 0;
     unsigned int featureProbsIdx = 1;
@@ -203,9 +211,9 @@ int main(int argc, char *argv[]) {
     std::vector<unsigned int> validBoxIds(featureVectors[batchId][featureConfsIdx].size());
     std::iota(validBoxIds.begin(), validBoxIds.end(), 0);
 
-    if (model.type == inferenceParams::ModelType::darknet){
+    if (cfgParser.aModel.type == ModelType::darknet){
         validBoxIds = Transforms::getValidBoxIds(
-            featureVectors[batchId][featureConfsIdx], targetPostTransformsv2.filterBoxes.thresh);
+            featureVectors[batchId][featureConfsIdx], cfgParser.aTargetPostTransforms.filterBoxes.thresh);
     }
 
     // loop through all valid boxes
@@ -221,14 +229,14 @@ int main(int argc, char *argv[]) {
         float score = conf * bestProb;
         int label = bestProbPtr - currProbPtr;
         // box post processing
-        const cv::Vec4f converted = Transforms::convertBox(inp, targetPostTransformsv2.convert.srcFmt);
+        const cv::Vec4f converted = Transforms::convertBox(inp, cfgParser.aTargetPostTransforms.convert.srcFmt);
         const cv::Vec4f rescaled = Transforms::rescaleBox(
-            converted, targetPostTransformsv2.rescale.offset, targetPostTransformsv2.rescale.scale);
+            converted, cfgParser.aTargetPostTransforms.rescale.offset, cfgParser.aTargetPostTransforms.rescale.scale);
         const cv::Vec4f resized = Transforms::resizeBox(
             rescaled,
-            targetPostTransformsv2.resize.inpSize,
-            targetPostTransformsv2.resize.tgtSize,
-            targetPostTransformsv2.resize.method);
+            cfgParser.aTargetPostTransforms.resize.inpSize,
+            cfgParser.aTargetPostTransforms.resize.tgtSize,
+            cfgParser.aTargetPostTransforms.resize.method);
         // output post-processed bbox
         cv::Rect2f bbox;
         bbox.x = resized[0];
@@ -242,7 +250,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Run NMS
-    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, targetPostTransformsv2.nms.maxOverlap, nmsIndices);
+    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, cfgParser.aTargetPostTransforms.nms.maxOverlap, nmsIndices);
     std::vector<AnnotItem> annotItems;
     for (auto& currIdx : nmsIndices) {
         AnnotItem item{};
@@ -253,10 +261,10 @@ int main(int argc, char *argv[]) {
     }
 
     auto totalElapsedTimeMs = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
-    std::cout << totalElapsedTimeMs << std::endl;
+    std::cout << "total:" << totalElapsedTimeMs << std::endl;
 
     // save annotated image
-    drawObjectLabels(cpuImg, annotItems, 1.0);
+    drawObjectLabels(cpuImg, annotItems, 1.0, cfgParser);
     std::filesystem::path outputImagePath = Util::getDirPath(imagePath);
     outputImagePath = outputImagePath.append("annotated.jpg");
     cv::imwrite(outputImagePath, cpuImg);

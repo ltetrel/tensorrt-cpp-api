@@ -5,10 +5,10 @@ image_pre_transforms:
     ConvertColor:
         model: "BGR"  #darknet specific which requires BGR input
     ResizeImg:
+        inp_size: [null, null]  # height width of image
+        tgt_size: [640, 640]   # height width of net
         method: "maintain_ar"
-        height: 640
-        width: 640
-    CastImg:  #TODO: transform should be used, currently hardcoded in Engine::blobFromGpuMats:439
+    CastImg:
         dtype: "float"
         scale: true
     NormalizeImg:
@@ -24,9 +24,9 @@ target_post_transforms:
         offset: [0.0, 0.0]
         scale: [640.0, 640.0]
     ResizeBox:
-        inp_size: [640, 640]
-        tgt_size: [null, null]
-        method: null
+        inp_size: [640, 640]  # height width of net
+        tgt_size: [null, null]  # height width of image
+        method:  "maintain_ar"
     NMS:
         max_overlap: 0.50
         nms_scale_factor: 1.0

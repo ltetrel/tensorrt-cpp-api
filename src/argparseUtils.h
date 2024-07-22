@@ -7,12 +7,14 @@ namespace argparseUtils {
 bool setArgParser(argparse::ArgumentParser& program){
     program.add_argument("--model")
         .required()
-        .help("Path to either an ONNX or TRT model");
+        .help("Path to the model (.onnx or .trt)");
+    program.add_argument("--cfg")
+        .required()
+        .help("Path to the inference config file (.yaml)");
     program.add_argument("--image")
         .required()
         .help("Path to an image (check supported formats here: "
             "https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#imread");
-
     return true;
 }
 

@@ -2,6 +2,26 @@
 #include <opencv2/cudaimgproc.hpp>
 
 
+
+cv::cuda::GpuMat Transforms::ResizeImg::run(const cv::cuda::GpuMat& inp){
+    cv::cuda::GpuMat resized(this->aTgtSize, inp.type());
+    cv::cuda::GpuMat scaled;
+
+    double rx = static_cast<double>(this->aTgtSize.width)/static_cast<double>(inp.cols);
+    double ry = static_cast<double>(this->aTgtSize.height)/static_cast<double>(inp.rows);
+    if (this->aMethod == ResizeMethod::maintain_ar){
+        rx = std::min(rx, ry);
+        ry = rx;
+    }
+
+    cv::cuda::resize(inp, scaled, cv::Size(), rx, ry);
+    // copy rescaled input to roi, needed for maintain_ar
+    cv::cuda::GpuMat roi(resized, cv::Rect(0, 0, scaled.cols, scaled.rows));          
+    scaled.copyTo(roi);
+
+    return resized;
+}
+
 cv::cuda::GpuMat Transforms::resizeImg(const cv::cuda::GpuMat& inp, const cv::Size size, const ResizeMethod method){
     cv::cuda::GpuMat resized(size, inp.type());
     cv::cuda::GpuMat scaled;
