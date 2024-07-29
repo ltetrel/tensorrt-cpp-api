@@ -39,8 +39,9 @@ endif()
 target_include_directories(tensorrt_cpp_api PUBLIC ${OpenCV_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS} ${TensorRT_INCLUDE_DIRS})
 target_link_libraries(tensorrt_cpp_api PUBLIC ${OpenCV_LIBS} ${CUDA_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${TensorRT_LIBRARIES})
 
-# add_executable(run_inference_benchmark src/benchmark.cpp)
-# target_link_libraries(run_inference_benchmark tensorrt_cpp_api)
+add_library(detector_api SHARED src/detector.cpp src/transforms.cpp src/configParser.cpp)
+target_include_directories(detector_api PUBLIC tensorrt_cpp_api)
+target_link_libraries(detector_api PUBLIC tensorrt_cpp_api)
 
-add_executable(run_prediction_image src/main.cpp src/transforms.cpp src/configParser.cpp)
-target_link_libraries(run_prediction_image tensorrt_cpp_api argparse)
+add_executable(run_prediction_image src/main.cpp)
+target_link_libraries(run_prediction_image tensorrt_cpp_api detector_api argparse)

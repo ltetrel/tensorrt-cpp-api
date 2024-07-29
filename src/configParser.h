@@ -220,7 +220,8 @@ namespace{
 
 class CfgParser{
 public:
-    CfgParser(std::filesystem::path pipePath);
+    CfgParser() = default;
+    CfgParser(std::filesystem::path cfgPath);
     void mSetImgSize(const cv::Size& tgtSize);
 
     ImagePreTransforms aImagePreTransforms;
@@ -234,5 +235,4 @@ private:
     Model mParseModel(cv::FileStorage inputFs);
     std::vector<std::string> mParseLabels(cv::FileStorage inputFs);
     std::vector<std::vector<float>> mParseColors(cv::FileStorage inputFs);
-
 };

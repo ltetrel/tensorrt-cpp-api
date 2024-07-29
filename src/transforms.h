@@ -89,7 +89,7 @@ cv::cuda::GpuMat castImg(
     const bool scale = true);
 cv::cuda::GpuMat normalizeImg(const cv::cuda::GpuMat& inp, const cv::Scalar mean, const cv::Scalar std);
 // bboxes transforms
-std::vector<unsigned int> getValidBoxIds(std::vector<float>& inp, float thresh);
+std::vector<unsigned int> getValidBoxIds(const std::vector<float>& inp, float thresh);
 cv::Vec4f convertBox(const cv::Vec4f& inp, const BoxFormat srcFormat, const BoxFormat tgtFormat = BoxFormat::xywh);
 cv::Vec4f rescaleBox(const cv::Vec4f& inp, const cv::Vec2f offset, const cv::Vec2f scale);
 cv::Vec4f resizeBox(const cv::Vec4f& inp, const cv::Size inpCanvaSize, const cv::Size tgtCanvaSize, const ResizeMethod method);

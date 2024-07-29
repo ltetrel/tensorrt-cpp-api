@@ -167,8 +167,8 @@ std::vector<std::vector<float>> CfgParser::mParseColors(cv::FileStorage inputFs)
     return colors;
 }
 
-CfgParser::CfgParser(std::filesystem::path pipePath){
-    cv::FileStorage fs(pipePath, cv::FileStorage::READ);
+CfgParser::CfgParser(std::filesystem::path cfgPath){
+    cv::FileStorage fs(cfgPath, cv::FileStorage::READ);
 
     this->aImagePreTransforms = this->mParsePreProcessing(fs);
     this->aTargetPostTransforms = this->mParsePostProcessing(fs);

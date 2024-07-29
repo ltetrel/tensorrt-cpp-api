@@ -119,7 +119,7 @@ cv::cuda::GpuMat Transforms::normalizeImg(const cv::cuda::GpuMat& inp, const cv:
     return normalized;
 }
 
-std::vector<unsigned int> Transforms::getValidBoxIds(std::vector<float>& inp, float thresh){
+std::vector<unsigned int> Transforms::getValidBoxIds(const std::vector<float>& inp, float thresh){
     std::vector<unsigned int> validBoxIds;
 
     for (size_t i=0; i < inp.size(); i++){
