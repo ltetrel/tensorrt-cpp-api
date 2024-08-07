@@ -561,7 +561,7 @@ bool Int8EntropyCalibrator2::getBatch(void **bindings, const char **names, int32
 
         // TODO: Define any preprocessing code here, such as resizing
         auto resized = gpuImg;
-        throw std::runtime_error("INT8 calibrator not working because pre-processing needs to be defined!");
+        throw std::runtime_error("INT8 calibrator not working because pre-processing now lives outside!");
 
         inputImgs.emplace_back(std::move(resized));
     }

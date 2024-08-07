@@ -80,7 +80,7 @@ const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vec
     unsigned int featureBboxIdx = 0;
     unsigned int featureProbsIdx = 1;
     unsigned int featureConfsIdx = 2;
-    const auto& boxesShape = outputDims[featureBboxIdx];
+    // const auto& boxesShape = outputDims[featureBboxIdx];
     const auto& probsShape = outputDims[featureProbsIdx];
 
     // size_t numAnchors = boxesShape.d[1];
