@@ -1,14 +1,16 @@
-#include "transforms.h"
+#include <opencv2/cudawarping.hpp>
+#include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudaimgproc.hpp>
 
+#include "transforms.h"
 
 
 cv::cuda::GpuMat Transforms::ResizeImg::run(const cv::cuda::GpuMat& inp){
-    cv::cuda::GpuMat resized(this->aTgtSize, inp.type());
+    cv::cuda::GpuMat resized(this->aSize, inp.type());
     cv::cuda::GpuMat scaled;
 
-    double rx = static_cast<double>(this->aTgtSize.width)/static_cast<double>(inp.cols);
-    double ry = static_cast<double>(this->aTgtSize.height)/static_cast<double>(inp.rows);
+    double rx = static_cast<double>(this->aSize.width)/static_cast<double>(inp.cols);
+    double ry = static_cast<double>(this->aSize.height)/static_cast<double>(inp.rows);
     if (this->aMethod == ResizeMethod::maintain_ar){
         rx = std::min(rx, ry);
         ry = rx;
@@ -131,55 +133,106 @@ std::vector<unsigned int> Transforms::getValidBoxIds(const std::vector<float>& i
     return validBoxIds;
 }
 
-cv::Vec4f Transforms::convertBox(const cv::Vec4f& inp, const BoxFormat srcFormat, const BoxFormat tgtFormat){
-    cv::Vec4f converted;
+BoundingBox Transforms::convertBBox(const BoundingBox& inp, const BoxFormat format){
+    //TODO: let user witch target format
+    cv::Vec4f convertedBounds;
 
-    switch (srcFormat)
+    switch (inp.aBoxFormat)
     {
     case BoxFormat::cxcywh:
-        converted[0] = inp[0] - (inp[2] / 2.f);
-        converted[1] = inp[1] - (inp[3] / 2.f);
-        converted[2] = inp[2];
-        converted[3] = inp[3];
+        convertedBounds[0] = inp.aBounds[0] - (inp.aBounds[2] / 2.f);
+        convertedBounds[1] = inp.aBounds[1] - (inp.aBounds[3] / 2.f);
+        convertedBounds[2] = inp.aBounds[2];
+        convertedBounds[3] = inp.aBounds[3];
         break;
     case BoxFormat::xyxy:
-        converted[0] = inp[0];
-        converted[1] = inp[1];
-        converted[2] = inp[2] - inp[0];
-        converted[3] = inp[3] - inp[1];
+        convertedBounds[0] = inp.aBounds[0];
+        convertedBounds[1] = inp.aBounds[1];
+        convertedBounds[2] = inp.aBounds[2] - inp.aBounds[0];
+        convertedBounds[3] = inp.aBounds[3] - inp.aBounds[1];
         break;
     
     default:
-        converted = inp;
+        convertedBounds = inp.aBounds;
     }
 
-    return converted;
+    BoundingBox convertedBBox(inp);
+    convertedBBox.aBounds = convertedBounds;
+    convertedBBox.aBoxFormat = BoxFormat::xywh;
+
+    return convertedBBox;
 }
 
-cv::Vec4f Transforms::rescaleBox(const cv::Vec4f& inp, const cv::Vec2f offset, const cv::Vec2f scale){
-    cv::Vec4f rescaled;
+BoundingBox Transforms::rescaleBBox(const BoundingBox& inp, const cv::Vec2f offset, const cv::Vec2f scale){
+    cv::Vec4f rescaledBounds;
 
-    rescaled[0] = scale[0]*(inp[0] + offset[0]);
-    rescaled[1] = scale[1]*(inp[1] + offset[1]);
-    rescaled[2] = scale[0]*(inp[2] + offset[0]);
-    rescaled[3] = scale[1]*(inp[3] + offset[1]);
+    rescaledBounds[0] = scale[0]*(inp.aBounds[0] + offset[0]);
+    rescaledBounds[1] = scale[1]*(inp.aBounds[1] + offset[1]);
+    rescaledBounds[2] = scale[0]*(inp.aBounds[2] + offset[0]);
+    rescaledBounds[3] = scale[1]*(inp.aBounds[3] + offset[1]);
+
+    BoundingBox rescaled(inp);
+    rescaled.aBounds = rescaledBounds;
 
     return rescaled;
 }
 
-cv::Vec4f Transforms::resizeBox(const cv::Vec4f& inp, const cv::Size inpCanvaSize, const cv::Size tgtCanvaSize, const ResizeMethod method){
-    cv::Vec4f resized;
+BoundingBox Transforms::resizeBBox(const BoundingBox& inp, const cv::Size size, const ResizeMethod method){
+    cv::Vec4f resizedBounds;
 
-    float rx = static_cast<float>(tgtCanvaSize.width)/static_cast<float>(inpCanvaSize.width);
-    float ry = static_cast<float>(tgtCanvaSize.height)/static_cast<float>(inpCanvaSize.height);
+    float rx = static_cast<float>(size.width) / static_cast<float>(inp.aSize.width);
+    float ry = static_cast<float>(size.height) / static_cast<float>(inp.aSize.height);
     if (method == ResizeMethod::maintain_ar){
         rx = std::max(rx, ry);  //std::max to make sure to cover all target canva region
         ry = rx;
     }
-    resized[0] = inp[0] * rx;
-    resized[1] = inp[1] * ry;
-    resized[2] = inp[2] * rx;
-    resized[3] = inp[3] * ry;
+    resizedBounds[0] = inp.aBounds[0] * rx;
+    resizedBounds[1] = inp.aBounds[1] * ry;
+    resizedBounds[2] = inp.aBounds[2] * rx;
+    resizedBounds[3] = inp.aBounds[3] * ry;
+
+    BoundingBox resized(inp);
+    resized.aBounds = resizedBounds;
 
     return resized;
+}
+
+std::vector<BoundingBox> Transforms::nmsBBox(
+        const std::vector<BoundingBox>& inp, const float maxOverlap, const float nmsScaleFactor, const float outputScaleFactor){
+    std::vector<cv::Rect> bboxes;
+    std::vector<float> scores;
+    std::vector<int> labels;
+    std::vector<int> nmsIndices;
+
+    // fill variables for opencv NMS
+    for (auto& currBBox : inp){
+        cv::Rect2f bbox;
+        bbox.x = currBBox.aBounds[0];
+        bbox.y = currBBox.aBounds[1];
+        bbox.width = currBBox.aBounds[2];
+        bbox.height = currBBox.aBounds[3];
+
+        bboxes.push_back(bbox);
+        labels.push_back(currBBox.aLabel);
+        scores.push_back(currBBox.aConf);
+    }
+    // NMS batched version performs each class independently
+    cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, maxOverlap, nmsIndices);
+
+    //return the list of bbox
+    std::vector<BoundingBox> listBBoxNMSed;
+    for (auto& currIdx : nmsIndices) {
+        BoundingBox currBBox(inp[0]);  // the output nms-ed boxes will have same size and format as input
+        currBBox.aConf = scores[currIdx];
+        currBBox.aLabel = labels[currIdx];
+        currBBox.aBounds = {
+            static_cast<float>(bboxes[currIdx].x),
+            static_cast<float>(bboxes[currIdx].y),
+            static_cast<float>(bboxes[currIdx].width),
+            static_cast<float>(bboxes[currIdx].height)
+        };
+        listBBoxNMSed.push_back(currBBox);
+    }
+    
+    return listBBoxNMSed;
 }

@@ -5,26 +5,13 @@
 #include <random>
 #include <iterator>
 #include <opencv2/cudaimgproc.hpp>
-#include "engine.h"
 #include "NvOnnxParser.h"
 
+#include "utils.h"
+#include "engine.h"
+
 using namespace nvinfer1;
-using namespace Util;
 
-std::vector<std::string> Util::getFilesInDirectory(const std::string& dirPath) {
-    std::vector<std::string> filepaths;
-    for (const auto& entry: std::filesystem::directory_iterator(dirPath)) {
-        filepaths.emplace_back(entry.path().string());
-    }
-    return filepaths;
-}
-
-std::string Util::getDirPath(const std::string& filePath){
-        std::filesystem::path p = filePath;
-        std::string parentPath = p.parent_path();
-
-        return parentPath;
-}
 
 void Logger::log(Severity severity, const char *msg) noexcept {
     // Would advise using a proper logging utility such as https://github.com/gabime/spdlog
@@ -40,7 +27,7 @@ Engine::Engine(const Options &options)
     : m_options(options) {}
 
 bool Engine::build(std::string onnxModelPath) {
-    m_trtModelPath = Util::getDirPath(onnxModelPath);
+    m_trtModelPath = Utils::getDirPath(onnxModelPath);
 
     // Only regenerate the engine file if it has not already been generated for the specified options
     m_engineName = serializeEngineOptions(m_options, onnxModelPath);
@@ -60,7 +47,7 @@ bool Engine::build(std::string onnxModelPath) {
     std::cout << "Engine not found, generating. This could take a while..." << std::endl;
 
     // Create our engine builder.
-    auto builder = std::unique_ptr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(m_logger));
+    auto builder = std::unique_ptr<IBuilder>(createInferBuilder(m_logger));
     if (!builder) {
         return false;
     }
@@ -68,7 +55,7 @@ bool Engine::build(std::string onnxModelPath) {
     // Define an explicit batch size and then create the network (implicit batch size is deprecated).
     // More info here: https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#explicit-implicit-batch
     auto explicitBatch = 1U << static_cast<uint32_t>(NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
-    auto network = std::unique_ptr<nvinfer1::INetworkDefinition>(builder->createNetworkV2(explicitBatch));
+    auto network = std::unique_ptr<INetworkDefinition>(builder->createNetworkV2(explicitBatch));
     if (!network) {
         return false;
     }
@@ -122,7 +109,7 @@ bool Engine::build(std::string onnxModelPath) {
         }
     }
 
-    auto config = std::unique_ptr<nvinfer1::IBuilderConfig>(builder->createBuilderConfig());
+    auto config = std::unique_ptr<IBuilderConfig>(builder->createBuilderConfig());
     if (!config) {
         return false;
     }
@@ -245,13 +232,13 @@ bool Engine::loadNetwork() {
     }
 
     // Create an engine, a representation of the optimized model.
-    m_engine = std::unique_ptr<nvinfer1::ICudaEngine>(m_runtime->deserializeCudaEngine(buffer.data(), buffer.size()));
+    m_engine = std::unique_ptr<ICudaEngine>(m_runtime->deserializeCudaEngine(buffer.data(), buffer.size()));
     if (!m_engine) {
         return false;
     }
 
     // The execution context contains all of the state associated with a particular invocation
-    m_context = std::unique_ptr<nvinfer1::IExecutionContext>(m_engine->createExecutionContext());
+    m_context = std::unique_ptr<IExecutionContext>(m_engine->createExecutionContext());
     if (!m_context) {
         return false;
     }
@@ -375,7 +362,7 @@ bool Engine::runInference(const std::vector<std::vector<cv::cuda::GpuMat>> &inpu
             return false;
         }
 
-        nvinfer1::Dims4 inputDims = {batchSize, dims.d[0], dims.d[1], dims.d[2]};
+        Dims4 inputDims = {batchSize, dims.d[0], dims.d[1], dims.d[2]};
         m_context->setInputShape(m_IOTensorNames[i].c_str(), inputDims); // Define the batch size
 
         // OpenCV reads images into memory in NHWC format, while TensorRT expects images in NCHW format.
@@ -534,7 +521,7 @@ Int8EntropyCalibrator2::Int8EntropyCalibrator2(int32_t batchSize, int32_t inputW
         throw std::runtime_error("Error, directory at provided path does not exist: " + calibDataDirPath);
     }
 
-    m_imgPaths = getFilesInDirectory(calibDataDirPath);
+    m_imgPaths = Utils::getFilesInDirectory(calibDataDirPath);
     if (m_imgPaths.size() < static_cast<size_t>(batchSize)) {
         throw std::runtime_error("There are fewer calibration images than the specified batch size!");
     }

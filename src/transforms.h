@@ -1,18 +1,16 @@
 #pragma once
 
+#include <vector>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/cuda.hpp>
+
 #include "engine.h"
+#include "boundingBox.h"
 
 
 enum class ResizeMethod {
     maintain_ar,
     scale,
-};
-
-enum class BoxFormat{
-// https://pytorch.org/vision/main/_modules/torchvision/tv_tensors/_bounding_boxes.html#BoundingBoxFormat
-    xywh,
-    cxcywh,
-    xyxy,
 };
 
 enum class ColorModel{
@@ -23,8 +21,7 @@ enum class ColorModel{
 };
 
 struct ResizeImg{
-        // original height and width of the network
-        cv::Size tgtSize;
+        cv::Size size;  // original height and width of the network
         ResizeMethod method = ResizeMethod::scale; // defines resizing method ["maintain_ar" or "scale"]
 };
 
@@ -58,8 +55,7 @@ struct RescaleBox{
 };
 
 struct ResizeBox{
-    cv::Size inpSize;
-    cv::Size tgtSize;
+    cv::Size size;  // normally extracted from input frame
     ResizeMethod method = ResizeMethod::scale;
 };
 
@@ -73,11 +69,11 @@ namespace Transforms {
     //TODO: create class for transform functions
     class ResizeImg{
         public:
-            ResizeImg(cv::Size tgtSize, ResizeMethod method): aTgtSize(tgtSize), aMethod(method){};
+            ResizeImg(cv::Size size, ResizeMethod method): aSize(size), aMethod(method){};
             //TODO: constructor from a cv::FileNode
             cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
         private:
-            cv::Size aTgtSize;
+            cv::Size aSize;
             ResizeMethod aMethod = ResizeMethod::scale; // defines resizing method ["maintain_ar" or "scale"]
     };
 // image transforms
@@ -90,8 +86,9 @@ cv::cuda::GpuMat castImg(
 cv::cuda::GpuMat normalizeImg(const cv::cuda::GpuMat& inp, const cv::Scalar mean, const cv::Scalar std);
 // bboxes transforms
 std::vector<unsigned int> getValidBoxIds(const std::vector<float>& inp, float thresh);
-cv::Vec4f convertBox(const cv::Vec4f& inp, const BoxFormat srcFormat, const BoxFormat tgtFormat = BoxFormat::xywh);
-cv::Vec4f rescaleBox(const cv::Vec4f& inp, const cv::Vec2f offset, const cv::Vec2f scale);
-cv::Vec4f resizeBox(const cv::Vec4f& inp, const cv::Size inpCanvaSize, const cv::Size tgtCanvaSize, const ResizeMethod method);
-// cv::dnn::NMSBoxesBatched not needed
+BoundingBox convertBBox(const BoundingBox& inp, const BoxFormat format = BoxFormat::xywh);
+BoundingBox rescaleBBox(const BoundingBox& inp, const cv::Vec2f offset, const cv::Vec2f scale);
+BoundingBox resizeBBox(const BoundingBox& inp, const cv::Size size, const ResizeMethod method);
+std::vector<BoundingBox> nmsBBox(
+    const std::vector<BoundingBox>& inp, const float maxOverlap, const float nmsScaleFactor, const float outputScaleFactor);
 }

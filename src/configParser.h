@@ -1,5 +1,11 @@
 #pragma once
 
+#include <filesystem>
+#include <vector>
+#include <unordered_map>
+#include <string>
+#include <opencv2/opencv.hpp>
+
 #include "transforms.h"
 
 
@@ -23,7 +29,7 @@ struct TargetPostTransforms{
     FilterBoxes filterBoxes = {0.01};
     ConvertBox convert = {BoxFormat::cxcywh};
     RescaleBox rescale = {{0.f, 0.f}, {640.f, 640.f}};
-    ResizeBox resize = {{640, 640}, {}, ResizeMethod::maintain_ar};
+    ResizeBox resize = {{}, ResizeMethod::maintain_ar};
     NMS nms = {0.5, 1.0, 1.0};
 };
 
@@ -222,7 +228,8 @@ class CfgParser{
 public:
     CfgParser() = default;
     CfgParser(std::filesystem::path cfgPath);
-    void mSetImgSize(const cv::Size& tgtSize);
+    void mSetImgSize(const cv::Size& size);
+    const cv::Size mGetImgSize();
 
     ImagePreTransforms aImagePreTransforms;
     TargetPostTransforms aTargetPostTransforms;

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <fstream>
-#include <chrono>
 #include <filesystem>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/cuda.hpp>
@@ -10,8 +8,8 @@
 #include "NvInfer.h"
 #include <cuda_runtime.h>
 
-// Utility methods
-namespace Util {
+
+namespace {
     inline void checkCudaErrorCode(cudaError_t code) {
         if (code != 0) {
             std::string errMsg = "CUDA operation failed with code: " + std::to_string(code) + "(" + cudaGetErrorName(code) + "), with message: " + cudaGetErrorString(code);
@@ -19,30 +17,7 @@ namespace Util {
             throw std::runtime_error(errMsg);
         }
     }
-
-    std::vector<std::string> getFilesInDirectory(const std::string& dirPath);
-
-    std::string getDirPath(const std::string& filePath);
 }
-// Utility Timer
-template <typename Clock = std::chrono::high_resolution_clock>
-class Stopwatch
-{
-    typename Clock::time_point start_point;
-public:
-    Stopwatch() :start_point(Clock::now()){}
-
-    // Returns elapsed time
-    template <typename Rep = typename Clock::duration::rep, typename Units = typename Clock::duration>
-    Rep elapsedTime() const {
-        std::atomic_thread_fence(std::memory_order_relaxed);
-        auto counted_time = std::chrono::duration_cast<Units>(Clock::now() - start_point).count();
-        std::atomic_thread_fence(std::memory_order_relaxed);
-        return static_cast<Rep>(counted_time);
-    }
-};
-
-using preciseStopwatch = Stopwatch<>;
 
 // Precision used for GPU inference
 enum class Precision {
@@ -54,15 +29,6 @@ enum class Precision {
     // Has reduced dynamic range, may result in slight loss in accuracy.
     // If INT8 is selected, must provide path to calibration dataset directory.
     INT8,
-};
-
-struct AnnotItem {
-    // The object class.
-    int label{};
-    // The detection's confidence probability.
-    float probability{};
-    // The object bounding box rectangle.
-    cv::Rect_<float> rect;
 };
 
 // Options for the network

@@ -1,17 +1,15 @@
-#include <chrono>
-#include <opencv2/cudaimgproc.hpp>
-#include <fstream>
+#include <argparse/argparse.hpp>
 
 #include "detector.h"
-#include "argparseUtils.h"
+#include "utils.h"
 
 namespace {
 
-void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, unsigned int scale, CfgParser cfgParser) {
+void drawObjectLabels(cv::Mat &image, const std::vector<BoundingBox> &objects, unsigned int scale, CfgParser cfgParser) {
     // Bounding boxes and annotations
     for (auto &object : objects) {
         // Choose the color
-        int colorIndex = object.label % cfgParser.aColors.size(); // We have only defined 80 unique colors
+        int colorIndex = object.aLabel % cfgParser.aColors.size(); // We have only defined 80 unique colors
         cv::Scalar color = cv::Scalar(cfgParser.aColors[colorIndex][0], cfgParser.aColors[colorIndex][1], cfgParser.aColors[colorIndex][2]);
         float meanColor = cv::mean(color)[0];
         cv::Scalar txtColor;
@@ -21,34 +19,48 @@ void drawObjectLabels(cv::Mat &image, const std::vector<AnnotItem> &objects, uns
             txtColor = cv::Scalar(255, 255, 255);
         }
 
-        const auto &rect = object.rect;
-
         // Draw rectangles and text
         char text[256];
-        sprintf(text, "%s %.1f%%", cfgParser.aLabels[object.label].c_str(), object.probability * 100);
+        sprintf(text, "%s %.1f%%", cfgParser.aLabels[object.aLabel].c_str(), object.aConf * 100);
 
         int baseLine = 0;
         cv::Size labelSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, scale, &baseLine);
-
         cv::Scalar txt_bk_color = color * 0.7 * 255;
 
-        int x = object.rect.x;
-        int y = object.rect.y + 1;
-
+        const cv::Rect rect = {
+            static_cast<int>(object.aBounds[0]),
+            static_cast<int>(object.aBounds[1]),
+            static_cast<int>(object.aBounds[2]),
+            static_cast<int>(object.aBounds[3])
+        };
+        int x = rect.x;
+        int y = rect.y + 1;
         cv::rectangle(image, rect, color * 255, scale + 1);
-
         cv::rectangle(image, cv::Rect(cv::Point(x, y), cv::Size(labelSize.width, labelSize.height + baseLine)), txt_bk_color, -1);
-
         cv::putText(image, text, cv::Point(x, y + labelSize.height), cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, txtColor, scale);
     }
+}
+
+bool setArgParser(argparse::ArgumentParser& program){
+    program.add_argument("--model")
+        .required()
+        .help("Path to the model (.onnx or .trt)");
+    program.add_argument("--cfg")
+        .required()
+        .help("Path to the inference config file (.yaml)");
+    program.add_argument("--image")
+        .required()
+        .help("Path to an image (check supported formats here: "
+            "https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#imread");
+    return true;
 }
 
 }
 
 int main(int argc, char *argv[]) {
-    // Parse the command line arguments
-    argparse::ArgumentParser program(argv[0], argparseUtils::appVersion);
-    argparseUtils::setArgParser(program);
+    // parse the command line arguments
+    argparse::ArgumentParser program(argv[0], Utils::apiVersion);
+    setArgParser(program);
     try {
         program.parse_args(argc, argv);
     }
@@ -57,7 +69,6 @@ int main(int argc, char *argv[]) {
         std::cerr << program;
         std::exit(1);
     }
-
     const std::filesystem::path modelPath = program.get<std::string>("--model");
     const std::filesystem::path cfgPath = program.get<std::string>("--cfg");
     const std::filesystem::path imagePath = program.get<std::string>("--image");
@@ -73,25 +84,26 @@ int main(int argc, char *argv[]) {
         std::cout << "Error: Unable to find image at path: " << imagePath << std::endl;
         return -1;
     }
-    // instanciate detector from config and ONNX model
-    Detector detector(modelPath, cfgPath);
 
-    // Read image and make inference
+    // read image and put on GPU
     auto cpuImg = cv::imread(imagePath);
     if (cpuImg.empty()) {
         throw std::runtime_error("Unable to read image at path: " + std::string(imagePath));
     }
     cv::cuda::GpuMat gpuImg;
     gpuImg.upload(cpuImg);
-    preciseStopwatch stopwatch;
-    const std::vector<AnnotItem> annotItems = detector.mPredict(gpuImg);
+
+    // instanciate detector then do inference
+    Detector detector(modelPath, cfgPath);
+    Utils::preciseStopwatch stopwatch;
+    const std::vector<BoundingBox> detections = detector.mPredict(gpuImg);
     auto totalElapsedTimeMs = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
-    std::cout << "total:" << totalElapsedTimeMs << std::endl;
+    std::cout << "Inference time (ms):" << totalElapsedTimeMs << std::endl;
 
     // save annotated image
     const CfgParser cfgparser = detector.mGetConfig();
-    drawObjectLabels(cpuImg, annotItems, 1.0, cfgparser);
-    std::filesystem::path outputImagePath = Util::getDirPath(imagePath);
+    drawObjectLabels(cpuImg, detections, 1.0, cfgparser);
+    std::filesystem::path outputImagePath = Utils::getDirPath(imagePath);
     outputImagePath = outputImagePath.append("annotated.jpg");
     cv::imwrite(outputImagePath, cpuImg);
     std::cout << "Saved annotated image to: " << outputImagePath << std::endl;

@@ -1,3 +1,5 @@
+#include <type_traits>
+
 #include "configParser.h"
 
 
@@ -74,7 +76,7 @@ ImagePreTransforms CfgParser::mParsePreProcessing(cv::FileStorage inputFs){
     imagePreTransforms.convertColor = ConvertColor{colorModel};
     // ResizeImg
     cv::FileNode ocvfnResizeImg = ocvfnPreprocess["ResizeImg"];
-    std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeImg["tgt_size"]);
+    std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeImg["size"]);
     ResizeMethod resizeMethod = mapFileNodeString<ResizeMethod>(ocvfnResizeImg["method"]);
     imagePreTransforms.resize = ResizeImg{{size[0], size[1]}, resizeMethod};
     // CastImg
@@ -118,11 +120,10 @@ TargetPostTransforms CfgParser::mParsePostProcessing(cv::FileStorage inputFs){
     };
     // ResizeBox
     cv::FileNode ocvfnResizeBox = ocvfnPreprocess["ResizeBox"];
-    std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeBox["inp_size"]);
+    std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeBox["size"]);
     ResizeMethod resizeMethod = mapFileNodeString<ResizeMethod>(ocvfnResizeBox["method"]);
     targetPostTransforms.resize = ResizeBox{
         {size[0], size[1]},
-        {-1, -1},
         resizeMethod
     };
     // NMS
@@ -179,6 +180,10 @@ CfgParser::CfgParser(std::filesystem::path cfgPath){
     fs.release();
 }
 
-void CfgParser::mSetImgSize(const cv::Size& tgtSize){
-    this->aTargetPostTransforms.resize.tgtSize = tgtSize;
+void CfgParser::mSetImgSize(const cv::Size& size){
+    this->aTargetPostTransforms.resize.size = size;
+}
+
+const cv::Size CfgParser::mGetImgSize(){
+    return this->aTargetPostTransforms.resize.size;
 }
