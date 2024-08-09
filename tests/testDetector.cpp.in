@@ -1,0 +1,78 @@
+#include <fstream>
+#include <filesystem>
+#include <vector>
+
+#include "boundingBox.h"
+#include "detector.h"
+
+namespace {
+
+bool compareDetections(const std::vector<BoundingBox>& detections, const std::vector<BoundingBox>& baselineDetections, float eps=1e-6) {
+    // compare only label, bounds and confidence
+    bool same = true;
+    auto it = std::begin(detections);
+    auto itBaseline = std::begin(baselineDetections);
+
+    while( ((it != std::end(detections)) | (itBaseline != std::end(baselineDetections))) & same){
+        same = ( it->aLabel == itBaseline->aLabel &&
+            fabs(it->aBounds[0] - itBaseline->aBounds[0]) < eps &&
+            fabs(it->aBounds[1] - itBaseline->aBounds[1]) < eps &&
+            fabs(it->aBounds[2] - itBaseline->aBounds[2]) < eps &&
+            fabs(it->aBounds[3] - itBaseline->aBounds[3]) < eps &&
+            fabs(it->aConf - itBaseline->aConf) < eps
+        );
+        it++;
+        itBaseline++;
+    }
+
+    return same;
+}
+
+std::vector<BoundingBox> readDetections(std::filesystem::path detectionsFile){
+    std::ifstream ifs(detectionsFile, std::ifstream::in);
+    std::vector<BoundingBox> baselineDetections;
+    BoundingBox object;
+    while (ifs) {
+        std::string line;
+        std::getline(ifs, line);
+        std::stringstream line_buffer(line);
+        line_buffer >> object;
+        baselineDetections.emplace_back(object);
+    }
+
+    return baselineDetections;
+}
+
+}
+
+int main(int argc, char *argv[]) {
+    const std::string modelName = argv[1];
+    const std::filesystem::path testDataDir = "@DATA_TESTING_DIR@";
+    const std::filesystem::path modelPath = testDataDir / "input" / "models" / modelName / "darknet.onnx";
+    const std::filesystem::path cfgPath = testDataDir / "input" / "models" / modelName / "detector_config.yaml";
+    const std::filesystem::path imagePath = testDataDir / "input" / "HOLO21_STN079_frame000990.png";
+
+    // read image and put on GPU
+    cv::Mat cpuImg = cv::imread(imagePath);
+    cv::cuda::GpuMat gpuImg;
+    gpuImg.upload(cpuImg);
+
+    // instanciate detector then do inference
+    Detector detector(modelPath, cfgPath);
+    const std::vector<BoundingBox> detections = detector.mPredict(gpuImg);
+
+    // compare output with baseline detections
+    std::filesystem::path baselineDetectionsFile = testDataDir / "baseline" / modelName / "HOLO21_STN079_frame000990.txt";
+    const std::vector<BoundingBox> baselineDetections = readDetections(baselineDetectionsFile);
+    bool testPassed = compareDetections(detections, baselineDetections);
+
+    // save detections
+    // std::filesystem::path detectionsFile = testDataDir / "baseline" / "HOLO21_STN079_frame000990.txt";
+    // std::ofstream ofs(detectionsFile, std::ofstream::out);
+    // for (const auto& object: detections){
+    //     ofs << object << std::endl;
+    // }
+    // ofs.close();
+
+    return testPassed;
+}
