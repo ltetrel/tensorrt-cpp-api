@@ -19,7 +19,7 @@ if (NOT TensorRT_DIR)
 endif()
 
 # We require CUDA, OpenCV, and TensorRT
-find_package(TensorRT 8.6 REQUIRED)
+find_package(TensorRT 8.5 REQUIRED)
 find_package(CUDA 11.4 REQUIRED)
 find_package(OpenCV 4.8 REQUIRED)
 
