@@ -221,3 +221,12 @@ This project follows the [all-contributors](https://github.com/all-contributors/
 
 TensorRT documentation: https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/index.html
 https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/api/c_api/index.html
+
+## Jetson performance mode
+
+Jetson devices allows you to switch between different modes.
+By default the GPU is really slow so we recommend you to boost it.
+```
+sudo /usr/sbin/nvpmodel -m <mode-id>
+```
+You can find the different mode-id for the jetson NX [here](https://docs.nvidia.com/jetson/archives/l4t-archived/l4t-3275/index.html#page/Tegra%20Linux%20Driver%20Package%20Development%20Guide/power_management_jetson_xavier.html#).

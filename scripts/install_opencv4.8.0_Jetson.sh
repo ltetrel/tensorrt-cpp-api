@@ -58,7 +58,7 @@ echo "** Build opencv "${version}" (3/4)"
 echo "------------------------------------"
 mkdir release
 cd release/
-cmake -D CMAKE_BUILD_TYPE=RELEASE \
+cmake -D CMAKE_BUILD_TYPE=Release \
 -D CMAKE_INSTALL_PREFIX=/usr/local \
 -D WITH_CUDA=ON \
 -D WITH_CUDNN=ON \
