@@ -11,7 +11,7 @@
 # slightly modified from https://forums.developer.nvidia.com/t/compiling-opencv-on-jetpack-5/219668/5
 
 version="4.8.0"
-folder="opencv-4.8.0-build"
+folder="opencv-${version}-build"
 
 for (( ; ; ))
 do
