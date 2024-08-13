@@ -6,6 +6,10 @@
 
 #include "detector.h"
 
+#ifdef WITH_BENCHMARK
+    #include "utils.h"
+#endif
+
 
 Detector::Detector(const std::filesystem::path onnxModelPath, const std::filesystem::path cfgPath){
     // **************************
@@ -146,16 +150,72 @@ const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vec
 }
 
 const std::vector<BoundingBox> Detector::mPredict(const cv::cuda::GpuMat& gpuImg){
+
     // Image pre-processing
+    #ifdef WITH_BENCHMARK
+        Utils::preciseStopwatch preStopwatch;
+    #endif
     const std::vector<std::vector<cv::cuda::GpuMat>> inputs = mPreProcess(gpuImg);
+    #ifdef WITH_BENCHMARK
+        auto preprocElpsInUs = preStopwatch.elapsedTime<float, std::chrono::microseconds>();
+        this->aPreTimeInMs.emplace_back(preprocElpsInUs/1000);
+    #endif
 
     // Inference
+    #ifdef WITH_BENCHMARK
+        Utils::preciseStopwatch inferStopwatch;
+    #endif
     std::vector<std::vector<std::vector<float>>> features;
     this->aEngine->runInference(inputs, features);
+    #ifdef WITH_BENCHMARK
+        auto inferenceElpsInUs = inferStopwatch.elapsedTime<float, std::chrono::microseconds>();
+        this->aInferTimeInMs.emplace_back(inferenceElpsInUs/1000);
+    #endif
 
     // Target post-processing
+    #ifdef WITH_BENCHMARK
+        Utils::preciseStopwatch postStopwatch;
+    #endif
     this->aConfig.mSetImgSize(gpuImg.size());
     const std::vector<BoundingBox> detections = mPostProcess(features);
+    #ifdef WITH_BENCHMARK
+        auto postprocElpsInUs = postStopwatch.elapsedTime<float, std::chrono::microseconds>();
+        this->aPostTimeInMs.emplace_back(postprocElpsInUs/1000);
+    #endif
 
     return detections;
 }
+
+#ifdef WITH_BENCHMARK
+    namespace {
+        template<typename T>
+        inline cv::Mat matFloatVector(std::vector<T>* vector, int offset){
+            return cv::Mat(
+                cv::Size(1, vector->size() - offset),
+                CV_32FC1,
+                vector->data() + offset
+            );
+        };
+    }
+    void Detector::mPrintBenchmarkSummary(int warmupSize){
+        // compute statistics and ignore first 5 values (warm-up)
+        cv::Mat merged[3] = {
+            matFloatVector(&(this->aPreTimeInMs), warmupSize),
+            matFloatVector(&(this->aInferTimeInMs), warmupSize),
+            matFloatVector(&(this->aPostTimeInMs), warmupSize)
+        };
+        cv::Mat matTimes;
+        cv::merge(merged, 3, matTimes);
+        cv::Scalar matMeans, matStddevs;
+        cv::meanStdDev(matTimes, matMeans, matStddevs);
+
+        std::cout << "======================" << std::endl;
+        std::cout << "Benchmarking complete!" << std::endl;
+        printf("Pre-processing (ms): %f +/- %f\n", matMeans[0], matStddevs[0]);
+        printf("Inference (ms): %f +/- %f\n", matMeans[1], matStddevs[1]);
+        printf("Post-processing (ms): %f +/- %f\n", matMeans[2], matStddevs[2]);
+        int avgFps = 1000 / (matMeans[0] + matMeans[1] + matMeans[2]);
+        printf("Avg FPS: %i\n", avgFps);
+        std::cout << "======================" << std::endl;
+    }
+#endif

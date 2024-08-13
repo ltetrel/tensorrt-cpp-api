@@ -11,7 +11,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-deprecated-declarations")
 
 # For finding FindTensorRT.cmake
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
-
 # TensorRT installation directory hint
 set(TensorRT_DIR "" CACHE PATH "TensorRT install directory.")
 if (NOT TensorRT_DIR)
@@ -40,11 +39,21 @@ endif()
 target_include_directories(tensorrt_cpp_api PUBLIC ${OpenCV_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS} ${TensorRT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tensorrt_cpp_api PUBLIC ${OpenCV_LIBS} ${CUDA_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${TensorRT_LIBRARIES})
 
+# Optionnal benchmark
+option(WITH_BENCHMARK "Performs benchmarking, do not use in production environment" OFF)
+message(WARNING "Benchmarking was enabled, do not use in a production environment!")
+
 add_library(tensorrt_detector SHARED src/detector.cpp src/transforms.cpp src/configParser.cpp)
+if (${WITH_BENCHMARK})
+    target_compile_definitions(tensorrt_detector PRIVATE WITH_BENCHMARK)
+endif()
 target_include_directories(tensorrt_detector PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tensorrt_detector PUBLIC tensorrt_cpp_api)
 
 add_executable(run_prediction_image src/main.cpp)
+if (${WITH_BENCHMARK})
+    target_compile_definitions(run_prediction_image PRIVATE WITH_BENCHMARK)
+endif()
 target_include_directories(run_prediction_image PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(run_prediction_image tensorrt_cpp_api tensorrt_detector argparse)
 

@@ -95,10 +95,26 @@ int main(int argc, char *argv[]) {
 
     // instanciate detector then do inference
     Detector detector(modelPath, cfgPath);
+    #ifdef WITH_BENCHMARK
+        // initial warmup
+        for (size_t i = 0; i < 100; ++i) {
+            cv::RNG rng(i);
+            cv::Mat mean = cv::Mat::zeros(1,1,CV_64FC1);
+            cv::Mat sigma = cv::Mat::ones(1,1,CV_64FC1);
+            cv::Mat randnMat(gpuImg.size(), gpuImg.type());
+            rng.fill(randnMat, cv::RNG::NORMAL, mean, sigma);
+            cv::cuda::GpuMat gpuRandn;
+            gpuRandn.upload(randnMat);
+            std::vector<BoundingBox> detectionsB = detector.mPredict(gpuRandn);
+            detectionsB.clear();
+        }
+        detector.mPrintBenchmarkSummary();
+    #endif
     Utils::preciseStopwatch stopwatch;
     const std::vector<BoundingBox> detections = detector.mPredict(gpuImg);
     auto totalElapsedTimeMs = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
-    std::cout << "Inference time (ms):" << totalElapsedTimeMs << std::endl;
+    std::cout << "Total detection time (ms):" << totalElapsedTimeMs << std::endl;
+
 
     // save annotated image
     const CfgParser cfgparser = detector.mGetConfig();
