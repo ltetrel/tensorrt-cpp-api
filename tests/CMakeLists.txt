@@ -10,6 +10,14 @@ set(DATA_TESTING_DIR "${CMAKE_SOURCE_DIR}/tests/data")
 # FetchContent_MakeAvailable(test_data)
 message(STATUS "Setting test data directory to: ${DATA_TESTING_DIR}.")
 
+execute_process(
+  COMMAND git log -1 --format=%h
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE GIT_COMMIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+message(STATUS "Generating test data for commit ${GIT_COMMIT_HASH}.")
+
 configure_file(testDetector.cpp.in testDetector.cpp @ONLY)
 add_executable(testDetector ${CMAKE_CURRENT_BINARY_DIR}/testDetector.cpp)
 target_include_directories(testDetector PRIVATE "${PROJECT_SOURCE_DIR}/src" ${CMAKE_CURRENT_SOURCE_DIR})

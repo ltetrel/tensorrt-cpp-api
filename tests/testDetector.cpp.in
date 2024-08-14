@@ -1,3 +1,6 @@
+#define DATA_TESTING_DIR "@DATA_TESTING_DIR@"
+#define GIT_COMMIT_HASH "@GIT_COMMIT_HASH@"
+
 #include <fstream>
 #include <filesystem>
 #include <vector>
@@ -47,7 +50,7 @@ std::vector<BoundingBox> readDetections(std::filesystem::path detectionsFile){
 
 int main(int argc, char *argv[]) {
     const std::string modelName = argv[1];
-    const std::filesystem::path testDataDir = "@DATA_TESTING_DIR@";
+    const std::filesystem::path testDataDir = DATA_TESTING_DIR;
     const std::filesystem::path modelPath = testDataDir / "input" / "models" / modelName / "darknet.onnx";
     const std::filesystem::path cfgPath = testDataDir / "input" / "models" / modelName / "detector_config.yaml";
     const std::filesystem::path imagePath = testDataDir / "input" / "HOLO21_STN079_frame000990.png";
@@ -67,12 +70,14 @@ int main(int argc, char *argv[]) {
     bool testPassed = compareDetections(detections, baselineDetections);
 
     // save detections
-    // std::filesystem::path detectionsFile = testDataDir / "baseline" / "HOLO21_STN079_frame000990.txt";
-    // std::ofstream ofs(detectionsFile, std::ofstream::out);
-    // for (const auto& object: detections){
-    //     ofs << object << std::endl;
-    // }
-    // ofs.close();
+    std::filesystem::path detectionsFile = 
+        testDataDir / "output" / modelName / (GIT_COMMIT_HASH + std::string("_") + modelName + std::string("_HOLO21_STN079_frame000990.txt"));
+    std::filesystem::create_directory(detectionsFile.parent_path());
+    std::ofstream ofs(detectionsFile, std::ofstream::out);
+    for (const auto& object: detections){
+        ofs << object << std::endl;
+    }
+    ofs.close();
 
     return testPassed;
 }
