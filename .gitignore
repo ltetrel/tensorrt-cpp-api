@@ -1,5 +1,4 @@
 # Prerequisites
-# Prerequisites
 *.d
 
 # Compiled Object files
@@ -39,6 +38,9 @@
 # build output
 build*/
 cmake-build-*
+
+# tests data
+tests/data
 
 # Files
 *.onnx
