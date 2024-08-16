@@ -9,54 +9,6 @@
 #include "transforms.h"
 
 
-enum class ModelType{
-    darknet,
-    netharn,
-};
-
-struct Model{
-    ModelType type = ModelType::darknet;
-};
-
-struct ImagePreTransforms{
-    ConvertColor convertColor = {ColorModel::BGR};
-    ResizeImg resize = {{640, 640}, ResizeMethod::maintain_ar};
-    CastImg cast = {Precision::FP32, true};
-    NormalizeImg normalize = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
-};
-
-struct TargetPostTransforms{
-    FilterBoxes filterBoxes = {0.01};
-    ConvertBox convert = {BoxFormat::cxcywh};
-    RescaleBox rescale = {{0.f, 0.f}, {640.f, 640.f}};
-    ResizeBox resize = {{}, ResizeMethod::maintain_ar};
-    NMS nms = {0.5, 1.0, 1.0};
-};
-
-struct TransformValueMapper{
-    std::unordered_map<std::string, ColorModel> const colorModel = {
-        {"RGB", ColorModel::RGB},
-        {"BGR", ColorModel::BGR},
-        {"GRAY", ColorModel::GRAY}
-    };
-    std::unordered_map<std::string, ResizeMethod> const resizeMethod = {
-        {"maintain_ar", ResizeMethod::maintain_ar},
-        {"scale", ResizeMethod::scale}
-    };
-    std::unordered_map<std::string, Precision> const imageType = {
-        {"int", Precision::INT8},
-        {"float", Precision::FP32}
-    };
-    std::unordered_map<std::string, BoxFormat> const boxFormat = {
-        {"xyxy", BoxFormat::xyxy},
-        {"cxcywh", BoxFormat::cxcywh}
-    };
-    std::unordered_map<std::string, ModelType> const modelType = {
-        {"darknet", ModelType::darknet},
-        {"netharn", ModelType::netharn}
-    };
-};
-
 namespace{
     std::vector<std::string> cocoLabels = {
         "person",
@@ -224,16 +176,39 @@ namespace{
     };
 }
 
+enum class ModelType{
+    darknet,
+    netharn,
+};
+
+struct Model{
+    ModelType type = ModelType::darknet;
+};
+
+struct ImagePreTransforms{
+    Transforms::ConvertColorImg convertColor;
+    Transforms::ResizeImg resize;
+    Transforms::CastImg cast;
+    Transforms::NormalizeImg normalize;
+};
+
+struct TargetPostTransforms{
+    Transforms::FilterBBoxes filter;
+    Transforms::ConvertBBox convert;
+    Transforms::RescaleBBox rescale;
+    Transforms::ResizeBBox resize;
+    Transforms::NMSBBoxes nms;
+};
+
 class CfgParser{
 public:
     CfgParser() = default;
     CfgParser(std::filesystem::path cfgPath);
-    void mSetImgSize(const cv::Size& size);
-    const cv::Size mGetImgSize();
 
     ImagePreTransforms aImagePreTransforms;
     TargetPostTransforms aTargetPostTransforms;
     Model aModel;
+    BoxFormat aBBoxSrcFormat;
     std::vector<std::string> aLabels = cocoLabels;
     std::vector<std::vector<float>> aColors = cocoColors;
 private:

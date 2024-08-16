@@ -3,7 +3,7 @@
 #include "configParser.h"
 
 
-namespace{
+namespace {  
     template <typename T>
     T parseFileNodeValue(cv::FileNode ocvFn){
         T value;
@@ -28,6 +28,31 @@ namespace{
 
         return values;
     }
+
+    struct TransformValueMapper{
+        std::unordered_map<std::string, ColorModel> const colorModel = {
+            {"RGB", ColorModel::RGB},
+            {"BGR", ColorModel::BGR},
+            {"GRAY", ColorModel::GRAY}
+        };
+        std::unordered_map<std::string, ResizeMethod> const resizeMethod = {
+            {"maintain_ar", ResizeMethod::maintain_ar},
+            {"scale", ResizeMethod::scale}
+        };
+        std::unordered_map<std::string, Precision> const imageType = {
+            {"int", Precision::INT8},
+            {"float", Precision::FP32}
+        };
+        std::unordered_map<std::string, BoxFormat> const boxFormat = {
+            {"xyxy", BoxFormat::xyxy},
+            {"cxcywh", BoxFormat::cxcywh},
+            {"xywh", BoxFormat::xywh}
+        };
+        std::unordered_map<std::string, ModelType> const modelType = {
+            {"darknet", ModelType::darknet},
+            {"netharn", ModelType::netharn}
+        };
+    };
 
     template <typename T>
     T mapFileNodeString(cv::FileNode ocvFn){
@@ -71,26 +96,26 @@ ImagePreTransforms CfgParser::mParsePreProcessing(cv::FileStorage inputFs){
     cv::FileNode ocvfnPreprocess = inputFs["image_pre_transforms"];
 
     // ConvertColor
-    cv::FileNode ocvfnConvertColor = ocvfnPreprocess["ConvertColor"];
+    cv::FileNode ocvfnConvertColor = ocvfnPreprocess["ConvertColorImg"];
     ColorModel colorModel = mapFileNodeString<ColorModel>(ocvfnConvertColor["model"]);
-    imagePreTransforms.convertColor = ConvertColor{colorModel};
+    imagePreTransforms.convertColor = Transforms::ConvertColorImg(colorModel);
     // ResizeImg
     cv::FileNode ocvfnResizeImg = ocvfnPreprocess["ResizeImg"];
     std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeImg["size"]);
     ResizeMethod resizeMethod = mapFileNodeString<ResizeMethod>(ocvfnResizeImg["method"]);
-    imagePreTransforms.resize = ResizeImg{{size[0], size[1]}, resizeMethod};
+    imagePreTransforms.resize = Transforms::ResizeImg(cv::Size(size[0], size[1]), resizeMethod);
     // CastImg
     cv::FileNode ocvfnCastImg = ocvfnPreprocess["CastImg"];
     Precision dtype = mapFileNodeString<Precision>(ocvfnCastImg["dtype"]);
     bool scale = parseFileNodeValue<bool>(ocvfnCastImg["scale"]);
-    imagePreTransforms.cast = CastImg{dtype, scale};
+    imagePreTransforms.cast = Transforms::CastImg(dtype, scale);
     // NormalizeImg
     cv::FileNode ocvfnNormImg = ocvfnPreprocess["NormalizeImg"];
     std::vector<float> means = parseFileNodeVector<float>(ocvfnNormImg["mean"]);
     std::vector<float> stds = parseFileNodeVector<float>(ocvfnNormImg["std"]);
-    imagePreTransforms.normalize = NormalizeImg{
-        {means[0], means[1], means[2]},
-        {stds[0], stds[1], stds[2]}
+    imagePreTransforms.normalize = Transforms::NormalizeImg{
+        cv::Vec3f(means[0], means[1], means[2]),
+        cv::Vec3f(stds[0], stds[1], stds[2])
     };
 
     return imagePreTransforms;
@@ -105,33 +130,33 @@ TargetPostTransforms CfgParser::mParsePostProcessing(cv::FileStorage inputFs){
     // FilterBoxes
     cv::FileNode ocvfnFilterBoxes = ocvfnPreprocess["FilterBoxes"];
     float thresh = parseFileNodeValue<float>(ocvfnFilterBoxes["thresh"]);
-    targetPostTransforms.filterBoxes = FilterBoxes{thresh};
+    targetPostTransforms.filter = Transforms::FilterBBoxes(thresh);
     // ConvertBox
     cv::FileNode ocvfnConvertBox = ocvfnPreprocess["ConvertBox"];
-    BoxFormat fmt = mapFileNodeString<BoxFormat>(ocvfnConvertBox["src_fmt"]);
-    targetPostTransforms.convert = ConvertBox{fmt};
+    BoxFormat srcFormat = mapFileNodeString<BoxFormat>(ocvfnConvertBox["src_fmt"]);
+    this->aBBoxSrcFormat = srcFormat;
+    BoxFormat tgtFormat = mapFileNodeString<BoxFormat>(ocvfnConvertBox["tgt_fmt"]);
+    targetPostTransforms.convert = Transforms::ConvertBBox(tgtFormat);
     // RescaleBox
     cv::FileNode ocvfnRescaleBox = ocvfnPreprocess["RescaleBox"];
     std::vector<float> offset = parseFileNodeVector<float>(ocvfnRescaleBox["offset"]);
     std::vector<float> scale = parseFileNodeVector<float>(ocvfnRescaleBox["scale"]);
-    targetPostTransforms.rescale = RescaleBox{
-        {offset[0], offset[1]},
-        {scale[0], scale[1]}
-    };
-    // ResizeBox
+    targetPostTransforms.rescale = Transforms::RescaleBBox(
+        cv::Vec2f(offset[0], offset[1]),
+        cv::Vec2f(scale[0], scale[1])
+    );
+    // ResizeBBox
     cv::FileNode ocvfnResizeBox = ocvfnPreprocess["ResizeBox"];
     std::vector<int> size = parseFileNodeVector<int>(ocvfnResizeBox["size"]);
     ResizeMethod resizeMethod = mapFileNodeString<ResizeMethod>(ocvfnResizeBox["method"]);
-    targetPostTransforms.resize = ResizeBox{
-        {size[0], size[1]},
-        resizeMethod
-    };
+    targetPostTransforms.resize = Transforms::ResizeBBox(cv::Size(size[0], size[1]), resizeMethod);
+
     // NMS
     cv::FileNode ocvfnNMS = ocvfnPreprocess["NMS"];
     float maxOverlap = parseFileNodeValue<float>(ocvfnNMS["max_overlap"]);
     float scaleFactor = parseFileNodeValue<float>(ocvfnNMS["nms_scale_factor"]);
     float outScaleFactor = parseFileNodeValue<float>(ocvfnNMS["output_scale_factor"]);
-    targetPostTransforms.nms = NMS{maxOverlap, scaleFactor, outScaleFactor};
+    targetPostTransforms.nms = Transforms::NMSBBoxes(maxOverlap, scaleFactor, outScaleFactor);
 
     return targetPostTransforms;
 }
@@ -178,12 +203,4 @@ CfgParser::CfgParser(std::filesystem::path cfgPath){
     this->aColors = this->mParseColors(fs);
 
     fs.release();
-}
-
-void CfgParser::mSetImgSize(const cv::Size& size){
-    this->aTargetPostTransforms.resize.size = size;
-}
-
-const cv::Size CfgParser::mGetImgSize(){
-    return this->aTargetPostTransforms.resize.size;
 }

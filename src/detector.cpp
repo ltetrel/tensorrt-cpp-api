@@ -11,7 +11,7 @@
 #endif
 
 
-Detector::Detector(const std::filesystem::path onnxModelPath, const std::filesystem::path cfgPath){
+Detector::Detector(const std::filesystem::path& onnxModelPath, const std::filesystem::path& cfgPath){
     // **************************
     // Model loading and building
     // **************************
@@ -40,12 +40,8 @@ Detector::Detector(const std::filesystem::path onnxModelPath, const std::filesys
 
     // Get net shape and update transforms 
     const auto& inpDims = this->aEngine->getInputDims();
-    this->aNetShape = {inpDims[0].d[1], inpDims[0].d[2]};
-    this->aConfig.aImagePreTransforms.resize.size = {inpDims[0].d[1], inpDims[0].d[2]};
-    this->aConfig.aTargetPostTransforms.rescale.scale = {
-        static_cast<float>(inpDims[0].d[1]),
-        static_cast<float>(inpDims[0].d[2])
-    };
+    cv::Size netSize = {inpDims[0].d[1], inpDims[0].d[2]};
+    this->mSetNetSize(netSize);
 }
 
 const CfgParser Detector::mGetConfig(){
@@ -56,20 +52,17 @@ const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv:
     // Loop through all inputs
     // Standard detector (which is the case here) should have only one input
     std::vector<std::vector<cv::cuda::GpuMat>> inputs;
-    const ImagePreTransforms imagePreTransforms = this->aConfig.aImagePreTransforms;
     const auto& inputDims = this->aEngine->getInputDims();
     const int32_t optBatchSize = this->aOptions.optBatchSize;
 
+    auto& imagePreTransforms = this->aConfig.aImagePreTransforms;
     for (const auto& inputDim : inputDims) {
         std::vector<cv::cuda::GpuMat> input;
         for (int32_t j = 0; j < optBatchSize; ++j) {
-            const cv::cuda::GpuMat colored = Transforms::convertColorImg(gpuImg, imagePreTransforms.convertColor.model);
-            const cv::cuda::GpuMat resized = Transforms::resizeImg(
-                colored, imagePreTransforms.resize.size, imagePreTransforms.resize.method);
-            const cv::cuda::GpuMat casted = Transforms::castImg(
-                resized, imagePreTransforms.cast.dtype, imagePreTransforms.cast.scale);
-            const cv::cuda::GpuMat normalized = Transforms::normalizeImg(
-                casted, imagePreTransforms.normalize.mean, imagePreTransforms.normalize.std);
+            const cv::cuda::GpuMat colored = imagePreTransforms.convertColor.run(gpuImg);
+            const cv::cuda::GpuMat resized = this->aConfig.aImagePreTransforms.resize.run(colored);
+            const cv::cuda::GpuMat casted = this->aConfig.aImagePreTransforms.cast.run(resized);
+            const cv::cuda::GpuMat normalized = this->aConfig.aImagePreTransforms.normalize.run(casted);
             input.emplace_back(std::move(normalized));
         }
         inputs.emplace_back(std::move(input));
@@ -78,79 +71,72 @@ const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv:
     return inputs;
 }
 
-const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vector<std::vector<float>>>& features){
-    const TargetPostTransforms targetPostTransforms = this->aConfig.aTargetPostTransforms;
-    const auto& outputDims = this->aEngine->getOutputDims();
-    unsigned int featureBboxIdx = 0;
-    unsigned int featureProbsIdx = 1;
-    unsigned int featureConfsIdx = 2;
-    // const auto& boxesShape = outputDims[featureBboxIdx];
-    const auto& probsShape = outputDims[featureProbsIdx];
+void Detector::mSetNetSize(const cv::Size& size){
+    this->aNetSize = size;
+    this->aConfig.aImagePreTransforms.resize.mSetSize(size);
+    this->aConfig.aTargetPostTransforms.rescale.mSetScale(
+        cv::Vec2f(static_cast<float>(size.width), static_cast<float>(size.height))
+    );
+}
 
-    // size_t numAnchors = boxesShape.d[1];
+void Detector::mSetImgSize(const cv::Size& size){
+    this->aImgSize = size;
+    this->aConfig.aTargetPostTransforms.resize.mSetSize(size);
+}
+
+const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vector<std::vector<float>>>& features){
+    const auto& outputDims = this->aEngine->getOutputDims();
+    unsigned int featureBBoxId = 0;
+    unsigned int featureProbsId = 1;
+    unsigned int featureConfsId = 2;
+    const auto& boxesShape = outputDims[featureBBoxId];
+    const auto& probsShape = outputDims[featureProbsId];
+    size_t batchSize = this->aOptions.optBatchSize;
+    size_t numBBoxes =  boxesShape.d[1];
     size_t numClasses = probsShape.d[2];
 
+    // initialize BBoxes list
+    //TODO init takes lot of times, to optimize.
     std::vector<BoundingBox> listBBoxes;
-    std::vector<cv::Rect> bboxes;
-    std::vector<float> scores;
-    std::vector<int> labels;
-    std::vector<int> nmsIndices;
-    int batchId = 0;  //TODO: manage batch size
-
-    // Get input bbox format
-    BoxFormat inpBoxFormat;
-    if (this->aConfig.aModel.type == ModelType::darknet){
-        inpBoxFormat = BoxFormat::cxcywh;
+    for (size_t batchId = 0; batchId < batchSize; batchId++){
+        for (size_t boxId = 0; boxId < numBBoxes; boxId++){
+            // bbox from trt output
+            const auto currBboxPtr = &features[batchId][featureBBoxId][boxId*4];
+            const auto currProbPtr = &features[batchId][featureProbsId][boxId*numClasses];
+            const auto currConfPtr = &features[batchId][featureConfsId][boxId];
+            auto bestProbPtr = std::max_element(currProbPtr, currProbPtr+numClasses);
+            float bestProb = *bestProbPtr;
+            float conf = *currConfPtr;
+            const cv::Vec4f inp = {*currBboxPtr, *(currBboxPtr+1), *(currBboxPtr+2), *(currBboxPtr+3)};
+            float score = conf * bestProb;
+            int label = bestProbPtr - currProbPtr;
+            // fill-in the detections
+            BoundingBox inpBBox(inp, this->aNetSize, this->aConfig.aBBoxSrcFormat, label, score);
+            listBBoxes.emplace_back(inpBBox);
+        }
     }
-    else if (this->aConfig.aModel.type == ModelType::netharn){
-        inpBoxFormat = BoxFormat::xywh;
-    }
-    else{
-        inpBoxFormat = targetPostTransforms.convert.srcFmt;  // by default use src format from config
-    }
-
+    auto& targetPostTransforms = this->aConfig.aTargetPostTransforms;
     // filter-out bad boxes
-    std::vector<unsigned int> validBoxIds(features[batchId][featureConfsIdx].size());
-    std::iota(validBoxIds.begin(), validBoxIds.end(), 0);
-    validBoxIds = Transforms::getValidBoxIds(
-        features[batchId][featureConfsIdx], targetPostTransforms.filterBoxes.thresh);
-    // then loop through all valid boxes
-    for (const unsigned int validBoxId: validBoxIds) {
-        // Get current bbox info
-        const auto currBboxPtr = &features[batchId][featureBboxIdx][validBoxId*4];
-        const auto currProbPtr = &features[batchId][featureProbsIdx][validBoxId*numClasses];
-        const auto currConfPtr = &features[batchId][featureConfsIdx][validBoxId];
-        auto bestProbPtr = std::max_element(currProbPtr, currProbPtr+numClasses);
-        float bestProb = *bestProbPtr;
-        float conf = *currConfPtr;
-        const cv::Vec4f inp = {*currBboxPtr, *(currBboxPtr+1), *(currBboxPtr+2), *(currBboxPtr+3)};
-        float score = conf * bestProb;
-        int label = bestProbPtr - currProbPtr;
-        const BoundingBox inpBBox(inp, this->aNetShape, inpBoxFormat, label, score);
+    const std::vector<BoundingBox> filteredBBoxes = targetPostTransforms.filter.run(listBBoxes);
+    // then loop through all valid bboxes and transform
+    std::vector<BoundingBox> outBBoxes;
+    for (const auto& bbox: filteredBBoxes) {
         // box post processing
-        const BoundingBox converted = Transforms::convertBBox(inpBBox, BoxFormat::xywh);
-        const BoundingBox rescaled = Transforms::rescaleBBox(
-            converted, targetPostTransforms.rescale.offset, targetPostTransforms.rescale.scale);
-        const BoundingBox resized = Transforms::resizeBBox(
-            rescaled,
-            targetPostTransforms.resize.size,
-            targetPostTransforms.resize.method);
+        const BoundingBox converted = targetPostTransforms.convert.run(bbox);
+        const BoundingBox rescaled = targetPostTransforms.rescale.run(converted);
+        const BoundingBox resized = targetPostTransforms.resize.run(rescaled);
         // append post-processed bbox
-        listBBoxes.push_back(resized);
-
+        outBBoxes.push_back(resized);
     }
     // run NMS
-    const std::vector<BoundingBox> listBBoxesNMSed = Transforms::nmsBBox(
-        listBBoxes,
-        targetPostTransforms.nms.maxOverlap,
-        targetPostTransforms.nms.nmsScaleFactor,
-        targetPostTransforms.nms.outputScaleFactor);
+    const std::vector<BoundingBox> NMSedBBoxes = targetPostTransforms.nms.run(outBBoxes);
 
-    return listBBoxesNMSed;
+    return NMSedBBoxes;
 }
 
 const std::vector<BoundingBox> Detector::mPredict(const cv::cuda::GpuMat& gpuImg){
 
+    this->mSetImgSize(gpuImg.size());  //used by post processing
     // Image pre-processing
     #ifdef WITH_BENCHMARK
         Utils::preciseStopwatch preStopwatch;
@@ -176,7 +162,6 @@ const std::vector<BoundingBox> Detector::mPredict(const cv::cuda::GpuMat& gpuImg
     #ifdef WITH_BENCHMARK
         Utils::preciseStopwatch postStopwatch;
     #endif
-    this->aConfig.mSetImgSize(gpuImg.size());
     const std::vector<BoundingBox> detections = mPostProcess(features);
     #ifdef WITH_BENCHMARK
         auto postprocElpsInUs = postStopwatch.elapsedTime<float, std::chrono::microseconds>();

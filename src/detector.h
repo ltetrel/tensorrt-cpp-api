@@ -11,9 +11,11 @@
 
 class Detector{
     public:
-        Detector(const std::filesystem::path onnxModelPath, const std::filesystem::path cfgPath);
+        Detector(const std::filesystem::path& onnxModelPath, const std::filesystem::path& cfgPath);
         const CfgParser mGetConfig();
         const std::vector<BoundingBox> mPredict(const cv::cuda::GpuMat& gpuImg);  //TODO: should return a boundingBox class
+        void mSetNetSize(const cv::Size& size);
+        void mSetImgSize(const cv::Size& size);
         #ifdef WITH_BENCHMARK
             void mPrintBenchmarkSummary(int warmupSize = 3);
         #endif
@@ -23,7 +25,8 @@ class Detector{
         CfgParser aConfig;
         Options aOptions;
         std::unique_ptr<Engine> aEngine = nullptr;
-        cv::Size aNetShape;
+        cv::Size aNetSize;
+        cv::Size aImgSize;
         #ifdef WITH_BENCHMARK
             std::vector<float> aPreTimeInMs, aInferTimeInMs, aPostTimeInMs;
         #endif

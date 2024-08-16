@@ -20,75 +20,102 @@ enum class ColorModel{
     GRAY,
 };
 
-struct ResizeImg{
-        cv::Size size;  // original height and width of the network
-        ResizeMethod method = ResizeMethod::scale; // defines resizing method ["maintain_ar" or "scale"]
-};
-
-struct ConvertColor{
-    ColorModel model = ColorModel::RGB;
-};
-
-struct CastImg{
-    Precision dtype = Precision::FP32;
-    bool scale = true;
-};
-
-struct NormalizeImg{
-    // Carefull with normalization parameters:
-    // https://discuss.pytorch.org/t/discussion-why-normalise-according-to-imagenet-mean-and-std-dev-for-transfer-learning/115670/7
-    cv::Vec3f mean = {0.485, 0.456, 0.406};
-    cv::Vec3f std = {0.229, 0.224, 0.225};
-};
-
-struct FilterBoxes{
-    float thresh = 0.1;  // probability for an object to exists (yolo objectness)
-};
-
-struct ConvertBox{
-    BoxFormat srcFmt = BoxFormat::xyxy;  // can be either "xyxy", "cxcywh" or "xywh"
-};
-
-struct RescaleBox{
-    cv::Vec2f offset = {0.f, 0.f};
-    cv::Vec2f scale = {1.f, 1.f};
-};
-
-struct ResizeBox{
-    cv::Size size;  // normally extracted from input frame
-    ResizeMethod method = ResizeMethod::scale;
-};
-
-struct NMS{
-    float maxOverlap = 0.50;
-    float nmsScaleFactor = 1.0;
-    float outputScaleFactor = 1.0;
-};
-
 namespace Transforms {
-    //TODO: create class for transform functions
-    class ResizeImg{
-        public:
-            ResizeImg(cv::Size size, ResizeMethod method): aSize(size), aMethod(method){};
-            //TODO: constructor from a cv::FileNode
-            cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
-        private:
-            cv::Size aSize;
-            ResizeMethod aMethod = ResizeMethod::scale; // defines resizing method ["maintain_ar" or "scale"]
-    };
+
+template<typename T>
+class ITransform{
+    public:
+        ITransform() = default;
+        virtual T run(const T& inp) = 0;
+};
+
 // image transforms
-cv::cuda::GpuMat resizeImg(const cv::cuda::GpuMat& inp, const cv::Size size, const ResizeMethod method);
-cv::cuda::GpuMat convertColorImg(const cv::cuda::GpuMat& inp, const ColorModel tgtModel);
-cv::cuda::GpuMat castImg(
-    const cv::cuda::GpuMat& inp,
-    const Precision dType = Precision::FP32,
-    const bool scale = true);
-cv::cuda::GpuMat normalizeImg(const cv::cuda::GpuMat& inp, const cv::Scalar mean, const cv::Scalar std);
+class ResizeImg: public ITransform<cv::cuda::GpuMat>{
+    public:
+        ResizeImg(const cv::Size size = {-1, -1}, const ResizeMethod method = ResizeMethod::scale): aSize(size), aMethod(method){};
+        cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
+        void mSetSize(const cv::Size size){ this->aSize = size; }; // Used by detector to define size (from net) at runtime
+    private:
+        cv::Size aSize;
+        ResizeMethod aMethod; // defines resizing method ["maintain_ar" or "scale"]
+};
+
+class ConvertColorImg: public ITransform<cv::cuda::GpuMat>{
+    public:
+        ConvertColorImg(const ColorModel colorModel = ColorModel::RGB): aColorModel(colorModel){};
+        cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
+    private:
+        ColorModel aColorModel;
+};
+
+class CastImg: public ITransform<cv::cuda::GpuMat>{
+    public:
+        CastImg(const Precision dType = Precision::FP32, bool scale = true): aDType(dType), aScale(scale){};
+        cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
+    private:
+        Precision aDType = Precision::FP32;
+        bool aScale = true;
+};
+
+class NormalizeImg: public ITransform<cv::cuda::GpuMat>{
+    public:
+        NormalizeImg(
+            const cv::Vec3f mean = {0.485, 0.456, 0.406},
+            const cv::Vec3f std = {0.229, 0.224, 0.225}): aMean(mean), aStd(std){};
+        cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp);
+    private:
+        cv::Vec3f aMean;
+        cv::Vec3f aStd;
+        // Carefull with normalization parameters:
+        // https://discuss.pytorch.org/t/discussion-why-normalise-according-to-imagenet-mean-and-std-dev-for-transfer-learning/115670/7
+};
+
 // bboxes transforms
-std::vector<unsigned int> getValidBoxIds(const std::vector<float>& inp, float thresh);
-BoundingBox convertBBox(const BoundingBox& inp, const BoxFormat format = BoxFormat::xywh);
-BoundingBox rescaleBBox(const BoundingBox& inp, const cv::Vec2f offset, const cv::Vec2f scale);
-BoundingBox resizeBBox(const BoundingBox& inp, const cv::Size size, const ResizeMethod method);
-std::vector<BoundingBox> nmsBBox(
-    const std::vector<BoundingBox>& inp, const float maxOverlap, const float nmsScaleFactor, const float outputScaleFactor);
+class ConvertBBox: public ITransform<BoundingBox>{
+    public:
+        ConvertBBox(const BoxFormat format = BoxFormat::xywh): aFormat(format){};
+        BoundingBox run(const BoundingBox& inp) override;
+    private:
+        BoxFormat aFormat;
+};
+
+class RescaleBBox: public ITransform<BoundingBox>{
+    public:
+        RescaleBBox(const cv::Vec2f offset = {0.f, 0.f}, const cv::Vec2f scale = {1.f, 1.f}): aOffset(offset), aScale(scale){};
+        BoundingBox run(const BoundingBox& inp) override;
+        void mSetScale(const cv::Vec2f scale){ this->aScale = scale; }; // Used by detector to define scale (from net) at runtime
+    private:
+        cv::Vec2f aOffset;
+        cv::Vec2f aScale;
+};
+
+class ResizeBBox: public ITransform<BoundingBox>{
+    public:
+        ResizeBBox(const cv::Size size = {-1, -1}, const ResizeMethod method = ResizeMethod::scale): aSize(size), aMethod(method){};
+        BoundingBox run(const BoundingBox& inp) override;
+        void mSetSize(const cv::Size size){ this->aSize = size; }; // Used by detector to define size (from image) at runtime
+    private:
+        cv::Size aSize;
+        ResizeMethod aMethod; // defines resizing method ["maintain_ar" or "scale"]
+};
+
+class FilterBBoxes: public ITransform<std::vector<BoundingBox>>{
+    public:
+        FilterBBoxes(float thresh = 0.1): aThresh(thresh){};
+        std::vector<BoundingBox> run(const std::vector<BoundingBox>& inp) override;
+    private:
+        float aThresh;
+};
+
+class NMSBBoxes: public ITransform<std::vector<BoundingBox>>{
+    public:
+        NMSBBoxes(float maxOverlap = 0.50, float nmsScaleFactor = 1.0, float outputScaleFactor = 1.0):
+            aMaxOverlap(maxOverlap), aNMSScaleFactor(nmsScaleFactor), aOutputScaleFactor(outputScaleFactor){};
+        std::vector<BoundingBox> run(const std::vector<BoundingBox>& inp) override;
+    private:
+        float aMaxOverlap;
+        float aNMSScaleFactor;
+        float aOutputScaleFactor;
+};
+
 }

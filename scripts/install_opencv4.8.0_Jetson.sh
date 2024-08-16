@@ -58,25 +58,11 @@ echo "** Build opencv "${version}" (3/4)"
 echo "------------------------------------"
 mkdir release
 cd release/
-cmake -D CMAKE_BUILD_TYPE=Release \
+cmake \
+-D CMAKE_BUILD_TYPE=Release \
 -D CMAKE_INSTALL_PREFIX=/usr/local \
 -D WITH_CUDA=ON \
 -D WITH_CUDNN=ON \
--D WITH_TBB=ON \
--D ENABLE_FAST_MATH=1 \
--D CUDA_FAST_MATH=1 \
--D WITH_CUBLAS=1 \
--D BUILD_opencv_cudacodec=ON \
--D OPENCV_DNN_CUDA=ON \
--D WITH_QT=OFF \
--D WITH_OPENGL=ON \
--D BUILD_opencv_apps=OFF \
--D BUILD_opencv_python2=OFF \
--D OPENCV_PC_FILE_NAME=opencv.pc \
--D OPENCV_ENABLE_NONFREE=ON \
--D INSTALL_C_EXAMPLES=OFF \
--D CUDA_ARCH_BIN="7.2,8.7" \
--D CUDA_ARCH_PTX="" \
 -D OPENCV_GENERATE_PKGCONFIG=ON \
 -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-${version}/modules \
 -D WITH_GSTREAMER=ON \
@@ -87,6 +73,21 @@ cmake -D CMAKE_BUILD_TYPE=Release \
 -D BUILD_EXAMPLES=OFF \
 -D WITH_FFMPEG=ON \
 ..
+# -D WITH_TBB=ON \
+# -D ENABLE_FAST_MATH=1 \
+# -D CUDA_FAST_MATH=1 \
+# -D WITH_CUBLAS=1 \
+# -D BUILD_opencv_cudacodec=ON \
+# -D OPENCV_DNN_CUDA=ON \
+# -D WITH_QT=OFF \
+# -D WITH_OPENGL=ON \
+# -D BUILD_opencv_apps=OFF \
+# -D BUILD_opencv_python2=OFF \
+# -D OPENCV_PC_FILE_NAME=opencv.pc \
+# -D OPENCV_ENABLE_NONFREE=ON \
+# -D INSTALL_C_EXAMPLES=OFF \
+# -D CUDA_ARCH_BIN="7.2,8.7" \
+# -D CUDA_ARCH_PTX="" \
 
 make -j$(nproc)
 

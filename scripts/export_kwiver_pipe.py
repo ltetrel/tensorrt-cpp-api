@@ -21,7 +21,7 @@ model:
     type: {model_type}
 
 image_pre_transforms:
-    ConvertColor:
+    ConvertColorImg:
         model: "BGR"  #darknet specific which requires BGR input
     ResizeImg:
         size: [-1, -1]   # height width of net, read from input trt engine
@@ -38,6 +38,7 @@ target_post_transforms:
         thresh: {threshold}  #block detector:darknet :thresh
     ConvertBox:
         src_fmt: "cxcywh"
+        tgt_fmt: "xywh"
     RescaleBox:
         offset: [0.0, 0.0]
         scale: [-1, -1]   # height width of net, read from input trt engine
