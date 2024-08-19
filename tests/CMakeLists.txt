@@ -1,25 +1,33 @@
 include(CTest)
 
-set(DATA_TESTING_DIR "${CMAKE_SOURCE_DIR}/tests/data")
-#TODO put test data on girder: https://github.com/girder/girder/blob/master/tests/CMakeLists.txt
-# FetchContent_Declare(test_data
-#     URL https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg
-#     URL_HASH SHA256=12794390cce7d0682ffc783c785e4282305684431b30b29ed75c224da24035b4
-#     DOWNLOAD_NO_EXTRACT true
-# )
-# FetchContent_MakeAvailable(test_data)
-message(STATUS "Setting test data directory to: ${DATA_TESTING_DIR}.")
-
 execute_process(
   COMMAND git log -1 --format=%h
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   OUTPUT_VARIABLE GIT_COMMIT_HASH
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-message(STATUS "Generating test data for commit ${GIT_COMMIT_HASH}.")
+message(STATUS "Current git commit ${GIT_COMMIT_HASH}.")
 
+#  Downloading test data
+include(ExternalData)
+set(ExternalData_URL_TEMPLATES "https://data.kitware.com/api/v1/file/hashsum/%(algo)/%(hash)/download")
+ExternalData_Expand_Arguments(testDetectorData
+    testDetectorDataRealPath
+    DATA{data/input/HOLO21_STN079_frame000990.png}
+    DATA{data/input/models/darknet/darknet.onnx}
+    DATA{data/input/models/darknet/detector_config.yaml}
+    DATA{data/baseline/darknet/HOLO21_STN079_frame000990.txt}
+)
+ExternalData_Add_Target(testDetectorData)
+
+# Configure test source
+set(DATA_TESTING_DIR "data")
+message(STATUS "Test data available at: " ${CMAKE_BINARY_DIR}/tests/data)
 configure_file(testDetector.cpp.in testDetector.cpp @ONLY)
+
+# Configure test build
 add_executable(testDetector ${CMAKE_CURRENT_BINARY_DIR}/testDetector.cpp)
+add_dependencies(testDetector testDetectorData)
 target_include_directories(testDetector PRIVATE "${PROJECT_SOURCE_DIR}/src" ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(testDetector tensorrt_cpp_api tensorrt_detector)
 add_test(NAME testDarknet COMMAND testDetector "darknet")
