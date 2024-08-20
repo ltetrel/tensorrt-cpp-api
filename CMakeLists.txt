@@ -41,10 +41,10 @@ target_link_libraries(tensorrt_cpp_api PUBLIC ${OpenCV_LIBS} ${CUDA_LIBRARIES} $
 
 # Optionnal benchmark
 option(WITH_BENCHMARK "Performs benchmarking, do not use in production environment" OFF)
-message(WARNING "Benchmarking was enabled, do not use in a production environment!")
 
 add_library(tensorrt_detector SHARED src/detector.cpp src/transforms.cpp src/configParser.cpp)
 if (${WITH_BENCHMARK})
+    message(WARNING "Benchmarking was enabled, do not use in a production environment!")
     target_compile_definitions(tensorrt_detector PRIVATE WITH_BENCHMARK)
 endif()
 target_include_directories(tensorrt_detector PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

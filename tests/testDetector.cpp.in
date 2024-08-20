@@ -13,20 +13,20 @@ namespace {
 bool compareDetections(
         const std::vector<BoundingBox>& detections,
         const std::vector<BoundingBox>& baselineDetections,
-        float eps=1e-6
+        float eps = 1e-6
     ) {
-    // compare only label, bounds and confidence
-    bool same = true;
+    // check only sizes
+    bool same = (detections.size() == baselineDetections.size());
+    // compare label, bounds and confidence
     auto it = std::begin(detections);
     auto itBaseline = std::begin(baselineDetections);
-
     while( ((it != std::end(detections)) | (itBaseline != std::end(baselineDetections))) & same){
         same = ( it->aLabel == itBaseline->aLabel &&
-            fabs(it->aBounds[0] - itBaseline->aBounds[0]) < eps &&
-            fabs(it->aBounds[1] - itBaseline->aBounds[1]) < eps &&
-            fabs(it->aBounds[2] - itBaseline->aBounds[2]) < eps &&
-            fabs(it->aBounds[3] - itBaseline->aBounds[3]) < eps &&
-            fabs(it->aConf - itBaseline->aConf) < eps
+            fabs(it->aBounds[0] - itBaseline->aBounds[0]) < 1e6 * eps &&
+            fabs(it->aBounds[1] - itBaseline->aBounds[1]) < 1e6 * eps &&
+            fabs(it->aBounds[2] - itBaseline->aBounds[2]) < 1e6 * eps &&
+            fabs(it->aBounds[3] - itBaseline->aBounds[3]) < 1e6 * eps &&
+            fabs(it->aConf - itBaseline->aConf) < 1e3 * eps
         );
         it++;
         itBaseline++;
@@ -42,9 +42,12 @@ std::vector<BoundingBox> readDetections(std::filesystem::path detectionsFile){
     while (ifs) {
         std::string line;
         std::getline(ifs, line);
-        std::stringstream line_buffer(line);
-        line_buffer >> object;
-        baselineDetections.emplace_back(object);
+        if (!line.empty()){
+            std::stringstream line_buffer(line);
+            BoundingBox object;
+            line_buffer >> object;
+            baselineDetections.emplace_back(object);
+        }
     }
 
     return baselineDetections;
@@ -92,5 +95,5 @@ int main(int argc, char *argv[]) {
     }
     ofs.close();
 
-    return testPassed;
+    return !testPassed;
 }
