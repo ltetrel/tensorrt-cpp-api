@@ -44,8 +44,44 @@ Detector::Detector(const std::filesystem::path& onnxModelPath, const std::filesy
     this->mSetNetSize(netSize);
 }
 
-const CfgParser Detector::mGetConfig(){
-    return this->aConfig;
+const std::vector<std::string> Detector::mGetLabels(){
+    return this->aConfig.aLabels;
+}
+
+const std::vector<std::vector<float>> Detector::mGetColors(){
+    return this->aConfig.aColors;
+}
+
+void Detector::mSetNetSize(const cv::Size& size){
+    this->aNetSize = size;
+    // loop through all transform and set size and scale
+    for (auto& ImgTransform: this->aConfig.aImagePreTransforms){
+        if(ImgTransform->aSetSize){
+            std::dynamic_pointer_cast<Transforms::ResizeImg>(ImgTransform)->mSetSize(size);
+        }
+    }
+    // for (const auto& BBoxTransform: this->aConfig.aBBoxVecPreTransforms){
+    //     if(BBoxTransform->aSetScale){
+    //         (Transforms::RescaleBBox*) BBoxTransform->mSetScale(
+    //             cv::Vec2f(static_cast<float>(size.width),
+    //             static_cast<float>(size.height))
+    //         );
+    //     }
+    // }
+    this->aConfig.aTargetPostTransforms.rescale.mSetScale(
+        cv::Vec2f(static_cast<float>(size.width), static_cast<float>(size.height))
+    );
+}
+
+void Detector::mSetImgSize(const cv::Size& size){
+    this->aImgSize = size;
+    // loop through all transform and set size
+    // for (const auto& BBoxTransform: this->aConfig.aBBoxVecPreTransforms){
+    //     if(BBoxTransform->aSetScale){
+    //         (Transforms::ResizeBBox*) BBoxTransform->mSetSize(size);
+    //     }
+    // }
+    this->aConfig.aTargetPostTransforms.resize.mSetSize(size);
 }
 
 const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv::cuda::GpuMat& gpuImg){
@@ -55,33 +91,19 @@ const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv:
     const auto& inputDims = this->aEngine->getInputDims();
     const int32_t optBatchSize = this->aOptions.optBatchSize;
 
-    auto& imagePreTransforms = this->aConfig.aImagePreTransforms;
     for (const auto& inputDim : inputDims) {
         std::vector<cv::cuda::GpuMat> input;
         for (int32_t j = 0; j < optBatchSize; ++j) {
-            const cv::cuda::GpuMat colored = imagePreTransforms.convertColor.run(gpuImg);
-            const cv::cuda::GpuMat resized = this->aConfig.aImagePreTransforms.resize.run(colored);
-            const cv::cuda::GpuMat casted = this->aConfig.aImagePreTransforms.cast.run(resized);
-            const cv::cuda::GpuMat normalized = this->aConfig.aImagePreTransforms.normalize.run(casted);
-            input.emplace_back(std::move(normalized));
+            cv::cuda::GpuMat cudaImg = gpuImg;
+            for(const auto& currTransform: this->aConfig.aImagePreTransforms){
+                cudaImg = currTransform->run(cudaImg);
+            }
+            input.emplace_back(std::move(cudaImg));
         }
         inputs.emplace_back(std::move(input));
     }
 
     return inputs;
-}
-
-void Detector::mSetNetSize(const cv::Size& size){
-    this->aNetSize = size;
-    this->aConfig.aImagePreTransforms.resize.mSetSize(size);
-    this->aConfig.aTargetPostTransforms.rescale.mSetScale(
-        cv::Vec2f(static_cast<float>(size.width), static_cast<float>(size.height))
-    );
-}
-
-void Detector::mSetImgSize(const cv::Size& size){
-    this->aImgSize = size;
-    this->aConfig.aTargetPostTransforms.resize.mSetSize(size);
 }
 
 const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vector<std::vector<float>>>& features){

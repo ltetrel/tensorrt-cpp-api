@@ -1,16 +1,25 @@
 #include <argparse/argparse.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include "detector.h"
 #include "utils.h"
 
+
 namespace {
 
-void drawObjectLabels(cv::Mat &image, const std::vector<BoundingBox> &objects, unsigned int scale, CfgParser cfgParser) {
+void drawObjectLabels(
+        cv::Mat &image,
+        const std::vector<BoundingBox> &objects,
+        unsigned int scale,
+        std::vector<std::vector<float>> colors,
+        std::vector<std::string> labels) {
     // Bounding boxes and annotations
     for (auto &object : objects) {
         // Choose the color
-        int colorIndex = object.aLabel % cfgParser.aColors.size(); // We have only defined 80 unique colors
-        cv::Scalar color = cv::Scalar(cfgParser.aColors[colorIndex][0], cfgParser.aColors[colorIndex][1], cfgParser.aColors[colorIndex][2]);
+        int colorIndex = object.aLabel % colors.size(); // We have only defined 80 unique colors
+        cv::Scalar color = cv::Scalar(colors[colorIndex][0], colors[colorIndex][1], colors[colorIndex][2]);
         float meanColor = cv::mean(color)[0];
         cv::Scalar txtColor;
         if (meanColor > 0.5) {
@@ -21,7 +30,7 @@ void drawObjectLabels(cv::Mat &image, const std::vector<BoundingBox> &objects, u
 
         // Draw rectangles and text
         char text[256];
-        sprintf(text, "%s %.1f%%", cfgParser.aLabels[object.aLabel].c_str(), object.aConf * 100);
+        sprintf(text, "%s %.1f%%", labels[object.aLabel].c_str(), object.aConf * 100);
 
         int baseLine = 0;
         cv::Size labelSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.35 * scale, scale, &baseLine);
@@ -59,7 +68,7 @@ bool setArgParser(argparse::ArgumentParser& program){
 
 int main(int argc, char *argv[]) {
     // parse the command line arguments
-    argparse::ArgumentParser program(argv[0], Utils::apiVersion);
+    argparse::ArgumentParser program(argv[0], Utils::API_VERSION);
     setArgParser(program);
     try {
         program.parse_args(argc, argv);
@@ -115,10 +124,8 @@ int main(int argc, char *argv[]) {
     auto totalElapsedTimeMs = stopwatch.elapsedTime<float, std::chrono::milliseconds>();
     std::cout << "Total detection time (ms):" << totalElapsedTimeMs << std::endl;
 
-
     // save annotated image
-    const CfgParser cfgparser = detector.mGetConfig();
-    drawObjectLabels(cpuImg, detections, 1.0, cfgparser);
+    drawObjectLabels(cpuImg, detections, 1.0, detector.mGetColors(), detector.mGetLabels());
     std::filesystem::path outputImagePath = Utils::getDirPath(imagePath);
     outputImagePath = outputImagePath.append("annotated.jpg");
     cv::imwrite(outputImagePath, cpuImg);

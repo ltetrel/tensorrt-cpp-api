@@ -5,7 +5,9 @@
 #include <unordered_map>
 #include <string>
 #include <opencv2/opencv.hpp>
+#include <memory>
 
+#include "boundingBox.h"
 #include "transforms.h"
 
 
@@ -183,14 +185,26 @@ enum class ModelType{
 
 struct Model{
     ModelType type = ModelType::darknet;
+    //TODO: engineType
 };
 
-struct ImagePreTransforms{
-    Transforms::ConvertColorImg convertColor;
-    Transforms::ResizeImg resize;
-    Transforms::CastImg cast;
-    Transforms::NormalizeImg normalize;
-};
+// enum class ModelType{
+//     yolov4,
+//     yolov7,
+//     cascadeFRCNN
+// };
+
+// enum class ModelBackend{
+//     darknet,
+//     netharn,
+    
+// };
+
+// struct Model{
+//     ModelType type = ModelType::yolov4;
+//     ModelBackend backend = ModelBackend::darknet;
+//     //TODO: engineType
+// };
 
 struct TargetPostTransforms{
     Transforms::FilterBBoxes filter;
@@ -200,20 +214,24 @@ struct TargetPostTransforms{
     Transforms::NMSBBoxes nms;
 };
 
+using ITImgTransformPtr = std::shared_ptr<Transforms::ITransform<cv::cuda::GpuMat>>;
+using ITBBoxTransformPtr = std::shared_ptr<Transforms::ITransform<BoundingBox>>;
+
 class CfgParser{
 public:
     CfgParser() = default;
     CfgParser(std::filesystem::path cfgPath);
 
-    ImagePreTransforms aImagePreTransforms;
+    std::vector<ITImgTransformPtr> aImagePreTransforms;
     TargetPostTransforms aTargetPostTransforms;
     Model aModel;
     BoxFormat aBBoxSrcFormat;
     std::vector<std::string> aLabels = cocoLabels;
     std::vector<std::vector<float>> aColors = cocoColors;
 private:
-    ImagePreTransforms mParsePreProcessing(cv::FileStorage inputFs);
+    std::vector<ITImgTransformPtr> mParsePreProcessing(cv::FileStorage inputFs);
     TargetPostTransforms mParsePostProcessing(cv::FileStorage inputFs);
+    BoxFormat mParseBBoxFormat(cv::FileStorage inputFs);
     Model mParseModel(cv::FileStorage inputFs);
     std::vector<std::string> mParseLabels(cv::FileStorage inputFs);
     std::vector<std::vector<float>> mParseColors(cv::FileStorage inputFs);
