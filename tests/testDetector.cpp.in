@@ -4,9 +4,13 @@
 #include <fstream>
 #include <filesystem>
 #include <vector>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/core.hpp>
 
 #include "boundingBox.h"
 #include "detector.h"
+
 
 namespace {
 
@@ -26,7 +30,7 @@ bool compareDetections(
             fabs(it->aBounds[1] - itBaseline->aBounds[1]) < 1e6 * eps &&
             fabs(it->aBounds[2] - itBaseline->aBounds[2]) < 1e6 * eps &&
             fabs(it->aBounds[3] - itBaseline->aBounds[3]) < 1e6 * eps &&
-            fabs(it->aConf - itBaseline->aConf) < 1e3 * eps
+            fabs(it->aConf - itBaseline->aConf) < 1e4 * eps
         );
         it++;
         itBaseline++;

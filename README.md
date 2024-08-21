@@ -230,3 +230,10 @@ By default the GPU is really slow so we recommend you to boost it.
 sudo /usr/sbin/nvpmodel -m <mode-id>
 ```
 You can find the different mode-id for the jetson NX [here](https://docs.nvidia.com/jetson/archives/l4t-archived/l4t-3275/index.html#page/Tegra%20Linux%20Driver%20Package%20Development%20Guide/power_management_jetson_xavier.html#).
+
+
+WARNING: for trt engine file generation, currently check from the ONNX filename. If you generate a new model, make sure to rename the ONNX with another name or no engine will be generated.
+
+
+Config:
+If you put `null`, the programm will try to infer its value (for example image size at runtime).

@@ -24,7 +24,7 @@ image_pre_transforms:
     ConvertColorImg:
         model: "BGR"  #darknet specific which requires BGR input
     ResizeImg:
-        size: [-1, -1]   # height width of net, read from input trt engine
+        size: [null, null]   # height width of net, read from input trt engine
         method: "{resize_method}"
     CastImg:
         dtype: "float"
@@ -39,11 +39,11 @@ target_post_transforms:
     ConvertBox:
         src_fmt: "cxcywh"
         tgt_fmt: "xywh"
-    RescaleBox:
+    RescaleBBox:
         offset: [0.0, 0.0]
-        scale: [-1, -1]   # height width of net, read from input trt engine
+        scale: [null, null]   # height width of net, read from input trt engine
     ResizeBox:
-        size: [-1, -1]  # height width of image, read from input frame
+        size: [null, null]  # height width of image, read from input frame
         method:  "{resize_method}"
     NMS:
         max_overlap: {nms_max_overlap}
