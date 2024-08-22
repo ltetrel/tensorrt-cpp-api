@@ -440,6 +440,8 @@ cv::cuda::GpuMat Engine::blobFromGpuMats(const std::vector<cv::cuda::GpuMat>& ba
 }
 
 std::string Engine::serializeEngineOptions(const Options &options, const std::string& onnxModelPath) {
+    //TODO: hash onnx file and append to trt engineName (function to add in Utils)
+    // https://techoverflow.net/2023/06/09/how-to-md5-hash-file-in-c-using-openssl/
     const auto filenamePos = onnxModelPath.find_last_of('/') + 1;
     std::string engineName = onnxModelPath.substr(filenamePos, onnxModelPath.find_last_of('.') - filenamePos) + ".engine";
 

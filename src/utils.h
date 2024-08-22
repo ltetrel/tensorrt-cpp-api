@@ -14,9 +14,11 @@ namespace Utils{
 
 inline std::vector<std::string> getFilesInDirectory(const std::string& dirPath){
     std::vector<std::string> filepaths;
+
     for (const auto& entry: std::filesystem::directory_iterator(dirPath)) {
         filepaths.emplace_back(entry.path().string());
     }
+
     return filepaths;
 }
 
@@ -97,8 +99,6 @@ public:
 };
 
 using preciseStopwatch = Stopwatch<>;
-
-//TODO: HASH onnx file https://techoverflow.net/2023/06/09/how-to-md5-hash-file-in-c-using-openssl/
 
 // TODO: use cmake .in to define version based on `git describe` as in 
 // https://gitlab.kitware.com/paraview/paraview/-/blob/master/CMakeLists.txt?ref_type=heads#L180

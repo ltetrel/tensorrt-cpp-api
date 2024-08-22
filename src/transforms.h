@@ -14,7 +14,7 @@ enum class ResizeMethod {
     scale,
 };
 
-enum class ColorModel{
+enum class ColorMode{
     // can be any of https://docs.opencv.org/4.x/d8/d01/group__imgproc__color__conversions.html
     RGB,
     BGR,
@@ -24,10 +24,10 @@ enum class ColorModel{
 namespace {
 
 struct TransformValueMapper{
-    std::unordered_map<std::string, ColorModel> const colorModel = {
-        {"RGB", ColorModel::RGB},
-        {"BGR", ColorModel::BGR},
-        {"GRAY", ColorModel::GRAY}
+    std::unordered_map<std::string, ColorMode> const colorMode = {
+        {"RGB", ColorMode::RGB},
+        {"BGR", ColorMode::BGR},
+        {"GRAY", ColorMode::GRAY}
     };
     std::unordered_map<std::string, ResizeMethod> const resizeMethod = {
         {"maintain_ar", ResizeMethod::maintain_ar},
@@ -51,8 +51,8 @@ T mapFileNodeString(cv::FileNode ocvFn){
     TransformValueMapper transformValueMapper;
     std::unordered_map<std::string, T> mapperTable;
 
-    if constexpr(std::is_same<T, ColorModel>::value){
-        mapperTable = transformValueMapper.colorModel;
+    if constexpr(std::is_same<T, ColorMode>::value){
+        mapperTable = transformValueMapper.colorMode;
     }
     else if constexpr(std::is_same<T, ResizeMethod>::value){
         mapperTable = transformValueMapper.resizeMethod;
@@ -85,13 +85,13 @@ class ITransform{
 // image transforms
 class ConvertColorImg: public ITransform<cv::cuda::GpuMat>{
     public:
-        ConvertColorImg(const ColorModel colorModel = ColorModel::RGB): aColorModel(colorModel){};
+        ConvertColorImg(const ColorMode colorMode = ColorMode::RGB): aColorMode(colorMode){};
         ConvertColorImg(const cv::FileNode& ocvfn){
-            this->aColorModel = mapFileNodeString<ColorModel>(ocvfn["model"]);
+            this->aColorMode = mapFileNodeString<ColorMode>(ocvfn["model"]);
         }
         cv::cuda::GpuMat run(const cv::cuda::GpuMat& inp) override;
     private:
-        ColorModel aColorModel;
+        ColorMode aColorMode;
 };
 
 class ResizeImg: public ITransform<cv::cuda::GpuMat>{
@@ -150,7 +150,7 @@ class ConvertBBox: public ITransform<BoundingBox>{
     public:
         ConvertBBox(const BoxFormat format = BoxFormat::xywh): aFormat(format){};
         ConvertBBox(const cv::FileNode& ocvfn){
-            this->aFormat = mapFileNodeString<BoxFormat>(ocvfn["tgt_fmt"]);
+            this->aFormat = mapFileNodeString<BoxFormat>(ocvfn["format"]);
         }
         BoundingBox run(const BoundingBox& inp) override;
     private:

@@ -10,15 +10,15 @@ cv::cuda::GpuMat Transforms::ConvertColorImg::run(const cv::cuda::GpuMat& inp){
     cv::cuda::GpuMat colored;
 
     // Assumes an input in BGR opencv format
-    switch (this->aColorModel)
+    switch (this->aColorMode)
     {
-    case ColorModel::BGR:
+    case ColorMode::BGR:
         colored = inp;
         break;
-    case ColorModel::RGB:
+    case ColorMode::RGB:
         cv::cuda::cvtColor(inp, colored, cv::COLOR_BGR2RGB);
         break;
-    case ColorModel::GRAY:
+    case ColorMode::GRAY:
         cv::cuda::cvtColor(inp, colored, cv::COLOR_BGR2GRAY);
         break;
     default:
@@ -214,7 +214,7 @@ std::vector<BoundingBox> Transforms::NMSBBoxes::run(const std::vector<BoundingBo
     std::vector<int> labels;
     std::vector<int> nmsIndices;
 
-    // fill variables for opencv NMS
+    // fill variables for opencv NMSBBoxes
     for (auto& currBBox : inp){
         cv::Rect2f bbox;
         bbox.x = currBBox.aBounds[0];
@@ -226,7 +226,7 @@ std::vector<BoundingBox> Transforms::NMSBBoxes::run(const std::vector<BoundingBo
         labels.push_back(currBBox.aLabel);
         scores.push_back(currBBox.aConf);
     }
-    // NMS batched version performs each class independently
+    // NMSBoxes batched version performs each class independently
     cv::dnn::NMSBoxesBatched(bboxes, scores, labels, 0.0, this->aMaxOverlap, nmsIndices);
 
     //return the list of bbox

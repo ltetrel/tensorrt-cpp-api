@@ -12,10 +12,6 @@
 
 
 Detector::Detector(const std::filesystem::path& onnxModelPath, const std::filesystem::path& cfgPath){
-    // **************************
-    // Model loading and building
-    // **************************
-
     // Specify TensorRT engine options
     Options options;
     options.precision = Precision::FP16; // Specify what precision to use for inference.
@@ -48,7 +44,7 @@ const std::vector<std::string> Detector::mGetLabels(){
     return this->aConfig.aLabels;
 }
 
-const std::vector<std::vector<float>> Detector::mGetColors(){
+const std::vector<cv::Scalar> Detector::mGetColors(){
     return this->aConfig.aColors;
 }
 
@@ -60,40 +56,35 @@ void Detector::mSetNetSize(const cv::Size& size){
             std::dynamic_pointer_cast<Transforms::ResizeImg>(ImgTransform)->mSetSize(size);
         }
     }
-    // for (const auto& BBoxTransform: this->aConfig.aBBoxVecPreTransforms){
-    //     if(BBoxTransform->aSetScale){
-    //         (Transforms::RescaleBBox*) BBoxTransform->mSetScale(
-    //             cv::Vec2f(static_cast<float>(size.width),
-    //             static_cast<float>(size.height))
-    //         );
-    //     }
-    // }
-    this->aConfig.aTargetPostTransforms.rescale.mSetScale(
-        cv::Vec2f(static_cast<float>(size.width), static_cast<float>(size.height))
-    );
+    for (auto& BBoxTransform: this->aConfig.aTargetPostTransforms){
+        if(BBoxTransform->aSetScale){
+            std::dynamic_pointer_cast<Transforms::RescaleBBox>(BBoxTransform)->mSetScale(
+                cv::Vec2f(static_cast<float>(size.width), static_cast<float>(size.height))
+            );
+        }
+    }
 }
 
 void Detector::mSetImgSize(const cv::Size& size){
     this->aImgSize = size;
     // loop through all transform and set size
-    // for (const auto& BBoxTransform: this->aConfig.aBBoxVecPreTransforms){
-    //     if(BBoxTransform->aSetScale){
-    //         (Transforms::ResizeBBox*) BBoxTransform->mSetSize(size);
-    //     }
-    // }
-    this->aConfig.aTargetPostTransforms.resize.mSetSize(size);
+    for (auto& BBoxTransform: this->aConfig.aTargetPostTransforms){
+        if(BBoxTransform->aSetSize){
+            std::dynamic_pointer_cast<Transforms::ResizeBBox>(BBoxTransform)->mSetSize(size);
+        }
+    }
 }
 
 const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv::cuda::GpuMat& gpuImg){
-    // Loop through all inputs
-    // Standard detector (which is the case here) should have only one input
     std::vector<std::vector<cv::cuda::GpuMat>> inputs;
     const auto& inputDims = this->aEngine->getInputDims();
-    const int32_t optBatchSize = this->aOptions.optBatchSize;
+    const size_t batchSize = this->aOptions.optBatchSize;
 
+    // loop through all inputs
+    // standard detector (which is the case here) should have only one input
     for (const auto& inputDim : inputDims) {
         std::vector<cv::cuda::GpuMat> input;
-        for (int32_t j = 0; j < optBatchSize; ++j) {
+        for (int32_t j = 0; j < batchSize; ++j) {
             cv::cuda::GpuMat cudaImg = gpuImg;
             for(const auto& currTransform: this->aConfig.aImagePreTransforms){
                 cudaImg = currTransform->run(cudaImg);
@@ -106,58 +97,69 @@ const std::vector<std::vector<cv::cuda::GpuMat>> Detector::mPreProcess(const cv:
     return inputs;
 }
 
-const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vector<std::vector<float>>>& features){
-    const auto& outputDims = this->aEngine->getOutputDims();
-    unsigned int featureBBoxId = 0;
-    unsigned int featureProbsId = 1;
-    unsigned int featureConfsId = 2;
-    const auto& boxesShape = outputDims[featureBBoxId];
-    const auto& probsShape = outputDims[featureProbsId];
-    size_t batchSize = this->aOptions.optBatchSize;
-    size_t numBBoxes =  boxesShape.d[1];
-    size_t numClasses = probsShape.d[2];
-
-    // initialize BBoxes list
-    //TODO init takes lot of times, to optimize.
+const std::vector<BoundingBox> Detector::mTranformModelOutput(const std::vector<std::vector<std::vector<float>>>& features){
     std::vector<BoundingBox> listBBoxes;
-    for (size_t batchId = 0; batchId < batchSize; batchId++){
-        for (size_t boxId = 0; boxId < numBBoxes; boxId++){
-            // bbox from trt output
-            const auto currBboxPtr = &features[batchId][featureBBoxId][boxId*4];
-            const auto currProbPtr = &features[batchId][featureProbsId][boxId*numClasses];
-            const auto currConfPtr = &features[batchId][featureConfsId][boxId];
-            auto bestProbPtr = std::max_element(currProbPtr, currProbPtr+numClasses);
-            float bestProb = *bestProbPtr;
-            float conf = *currConfPtr;
-            const cv::Vec4f inp = {*currBboxPtr, *(currBboxPtr+1), *(currBboxPtr+2), *(currBboxPtr+3)};
-            float score = conf * bestProb;
-            int label = bestProbPtr - currProbPtr;
-            // fill-in the detections
-            BoundingBox inpBBox(inp, this->aNetSize, this->aConfig.aBBoxSrcFormat, label, score);
-            listBBoxes.emplace_back(inpBBox);
+    const auto& outputDims = this->aEngine->getOutputDims();
+    const size_t batchSize = this->aOptions.optBatchSize;
+    ModelBackend modelBackend = this->aConfig.aModel.backend;
+    
+    if (modelBackend == ModelBackend::darknet){
+        const BoxFormat boxFormat = BoxFormat::cxcywh;
+        const unsigned int featureBBoxId = 0;
+        const unsigned int featureProbsId = 1;
+        const unsigned int featureConfsId = 2;
+        const auto& boxesShape = outputDims[featureBBoxId];
+        const auto& probsShape = outputDims[featureProbsId];
+        const size_t numBBoxes =  boxesShape.d[1];
+        const size_t numClasses = probsShape.d[2];
+
+        // initialize BBoxes list
+        //TODO init takes lot of times, to optimize.
+        for (size_t batchId = 0; batchId < batchSize; batchId++){
+            for (size_t boxId = 0; boxId < numBBoxes; boxId++){
+                // bbox from trt output
+                const auto currBboxPtr = &features[batchId][featureBBoxId][boxId*4];
+                const auto currProbPtr = &features[batchId][featureProbsId][boxId*numClasses];
+                const auto currConfPtr = &features[batchId][featureConfsId][boxId];
+                auto bestProbPtr = std::max_element(currProbPtr, currProbPtr+numClasses);
+                float bestProb = *bestProbPtr;
+                float conf = *currConfPtr;
+                cv::Vec4f bounds = {*currBboxPtr, *(currBboxPtr+1), *(currBboxPtr+2), *(currBboxPtr+3)};
+                float score = conf * bestProb;
+                int label = bestProbPtr - currProbPtr;
+                // fill-in the detections
+                BoundingBox inpBBox(bounds, this->aNetSize, boxFormat, label, score);
+                listBBoxes.emplace_back(inpBBox);
+            }
         }
     }
-    auto& targetPostTransforms = this->aConfig.aTargetPostTransforms;
+    else{
+        throw std::runtime_error("Transforming output for this model backend is not supported yet!");
+    }
+
+    return listBBoxes;
+}
+
+const std::vector<BoundingBox> Detector::mPostProcess(const std::vector<std::vector<std::vector<float>>>& features){
+    // get BBox list from model output
+    std::vector<BoundingBox> listBBoxes = this->mTranformModelOutput(features);
     // filter-out bad boxes
-    const std::vector<BoundingBox> filteredBBoxes = targetPostTransforms.filter.run(listBBoxes);
+    std::vector<BoundingBox> filteredBBoxes = this->aConfig.aTargetsFilterTransform->run(listBBoxes);
     // then loop through all valid bboxes and transform
     std::vector<BoundingBox> outBBoxes;
-    for (const auto& bbox: filteredBBoxes) {
-        // box post processing
-        const BoundingBox converted = targetPostTransforms.convert.run(bbox);
-        const BoundingBox rescaled = targetPostTransforms.rescale.run(converted);
-        const BoundingBox resized = targetPostTransforms.resize.run(rescaled);
-        // append post-processed bbox
-        outBBoxes.push_back(resized);
+    for (BoundingBox& bbox: filteredBBoxes) {
+        for(const auto& currTransform: this->aConfig.aTargetPostTransforms){
+            bbox = currTransform->run(bbox);
+        }
+        outBBoxes.push_back(bbox);
     }
-    // run NMS
-    const std::vector<BoundingBox> NMSedBBoxes = targetPostTransforms.nms.run(outBBoxes);
+    // run NMSBBoxes
+    const std::vector<BoundingBox> NMSedBBoxes = this->aConfig.aTargetsNMSTransform->run(outBBoxes);
 
     return NMSedBBoxes;
 }
 
 const std::vector<BoundingBox> Detector::mPredict(const cv::cuda::GpuMat& gpuImg){
-
     this->mSetImgSize(gpuImg.size());  //used by post processing
     // Image pre-processing
     #ifdef WITH_BENCHMARK

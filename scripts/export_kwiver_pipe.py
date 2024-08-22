@@ -19,6 +19,7 @@ YAML_CONFIG_TEMPLATE = """%YAML:1.0
 
 model:
     type: {model_type}
+    backend: {model_backend}
 
 image_pre_transforms:
     ConvertColorImg:
@@ -34,18 +35,17 @@ image_pre_transforms:
         std: [1.0, 1.0, 1.0]
 
 target_post_transforms:
-    FilterBoxes:
+    FilterBBoxes:
         thresh: {threshold}  #block detector:darknet :thresh
-    ConvertBox:
-        src_fmt: "cxcywh"
-        tgt_fmt: "xywh"
+    ConvertBBox:
+        format: "xywh"
     RescaleBBox:
         offset: [0.0, 0.0]
         scale: [null, null]   # height width of net, read from input trt engine
-    ResizeBox:
+    ResizeBBox:
         size: [null, null]  # height width of image, read from input frame
         method:  "{resize_method}"
-    NMS:
+    NMSBBoxes:
         max_overlap: {nms_max_overlap}
         nms_scale_factor: {nms_scale_factor}
         output_scale_factor: {nms_output_scale_factor}
@@ -74,7 +74,7 @@ def get_parser():
     return parser
 
 
-def parse_model_type(pipe_path: Path):
+def parse_model(pipe_path: Path):
     """Parse the model type from the pipeline file."""
     pattern = ".*?:detector:type *?([aA-zZ]*)\n"
 
@@ -82,10 +82,17 @@ def parse_model_type(pipe_path: Path):
         for line in f:
             matches = re.match(pattern, line)
             if matches:
-                model_type = matches[1]
+                model_backend = matches[1]
             # Do not stop until end to get last model type
 
-    return model_type
+    if model_backend == "darknet":
+        # TODO: should be parsed somehow from .cfg
+        model_type = "yolov4-csp-s-mish"
+    elif model_backend == "netharn":
+        # TODO: should be parsed from "train_info.json"
+        model_type = "cascadeRCNN"
+
+    return model_type, model_backend
 
 
 def parse_darknet_pipeline(pipe_path: Path):
@@ -211,6 +218,7 @@ def main(pipe_path: Path, kwiver_install_dir: Path = ""):
     date = datetime.now().strftime("%Y-%d-%mT%H:%M:%S")
     resize_method = ""
     model_type = ""
+    model_backend = ""
     labels = []
     colors = []
     threshold = 0.01
@@ -226,10 +234,10 @@ def main(pipe_path: Path, kwiver_install_dir: Path = ""):
     # graphs = pydot.graph_from_dot_file(dot_file)
     # graph = graphs[0]
 
-    model_type = parse_model_type(pipe_path)
-    if model_type == "darknet":
+    model_type, model_backend = parse_model(pipe_path)
+    if model_backend == "darknet":
         resize_method, labels, threshold = parse_darknet_pipeline(pipe_path)
-    elif model_type == "netharn":
+    elif model_backend == "netharn":
         resize_method, labels = parse_netharn_pipeline(pipe_path)
     nms_max_overlap, nms_scale_factor, nms_output_scale_factor = parse_nms_pipeline(pipe_path)
     # uniform sampling of colors on rainbow
@@ -245,6 +253,7 @@ def main(pipe_path: Path, kwiver_install_dir: Path = ""):
                 pipe_path=pipe_path,
                 date=date,
                 model_type=model_type,
+                model_backend=model_backend,
                 resize_method=resize_method,
                 threshold=threshold,
                 nms_max_overlap=nms_max_overlap,

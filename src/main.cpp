@@ -13,13 +13,13 @@ void drawObjectLabels(
         cv::Mat &image,
         const std::vector<BoundingBox> &objects,
         unsigned int scale,
-        std::vector<std::vector<float>> colors,
+        std::vector<cv::Scalar> colors,
         std::vector<std::string> labels) {
     // Bounding boxes and annotations
     for (auto &object : objects) {
         // Choose the color
         int colorIndex = object.aLabel % colors.size(); // We have only defined 80 unique colors
-        cv::Scalar color = cv::Scalar(colors[colorIndex][0], colors[colorIndex][1], colors[colorIndex][2]);
+        cv::Scalar color = colors[colorIndex];
         float meanColor = cv::mean(color)[0];
         cv::Scalar txtColor;
         if (meanColor > 0.5) {
