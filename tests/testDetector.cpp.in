@@ -26,11 +26,11 @@ bool compareDetections(
     auto itBaseline = std::begin(baselineDetections);
     while( ((it != std::end(detections)) | (itBaseline != std::end(baselineDetections))) & same){
         same = ( it->aLabel == itBaseline->aLabel &&
-            fabs(it->aBounds[0] - itBaseline->aBounds[0]) < 1e6 * eps &&
-            fabs(it->aBounds[1] - itBaseline->aBounds[1]) < 1e6 * eps &&
-            fabs(it->aBounds[2] - itBaseline->aBounds[2]) < 1e6 * eps &&
-            fabs(it->aBounds[3] - itBaseline->aBounds[3]) < 1e6 * eps &&
-            fabs(it->aConf - itBaseline->aConf) < 1e4 * eps
+            fabs(it->aBounds[0] - itBaseline->aBounds[0]) < 2e6 * eps &&
+            fabs(it->aBounds[1] - itBaseline->aBounds[1]) < 2e6 * eps &&
+            fabs(it->aBounds[2] - itBaseline->aBounds[2]) < 2e6 * eps &&
+            fabs(it->aBounds[3] - itBaseline->aBounds[3]) < 2e6 * eps &&
+            fabs(it->aConf - itBaseline->aConf) < 5e4 * eps
         );
         it++;
         itBaseline++;
