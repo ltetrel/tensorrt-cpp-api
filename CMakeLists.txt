@@ -40,6 +40,7 @@ target_include_directories(tensorrt_cpp_api PUBLIC ${OpenCV_INCLUDE_DIRS} ${CUDA
 target_link_libraries(tensorrt_cpp_api PUBLIC ${OpenCV_LIBS} ${CUDA_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${TensorRT_LIBRARIES})
 
 # Optionnal benchmark
+# TODO: use Google benchmark instead
 option(WITH_BENCHMARK "Performs benchmarking, do not use in production environment" OFF)
 
 add_library(tensorrt_detector SHARED src/detector.cpp src/transforms.cpp src/configParser.cpp)

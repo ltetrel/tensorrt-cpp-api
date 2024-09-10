@@ -1,228 +1,194 @@
-[![Stargazers][stars-shield]][stars-url]
-<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
-<!-- ALL-CONTRIBUTORS-BADGE:END -->
-[![Issues][issues-shield]][issues-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
+# TensorRT C++ API
 
-<!-- PROJECT LOGO -->
-<br />
-<p align="center">
-  <a href="https://github.com/cyrusbehr/tensorrt-cpp-api">
-    <img width="40%" src="images/logo.png" alt="logo">
-  </a>
+A minimalist object-detection API for [ONNX](https://onnx.ai/) /[NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) models.
 
-  <h3 align="center">TensorRT C++ API Tutorial</h3>
+# Requirements
 
-  <p align="center">
-    <b>
-    How to use TensorRT C++ API for high performance GPU machine-learning inference.
-    </b>
-    <br />
-    Supports models with single / multiple inputs and single / multiple outputs with batching.
-    <br />
-    <br />
-    <a href="https://www.youtube.com/watch?v=kPJ9uDduxOs">Project Overview Video</a>
-    .
-    <a href="https://youtu.be/Z0n5aLmcRHQ">Code Deep-Dive Video</a>
-  </p>
-</p>
+- CUDA `11.4`
+- TensorRT `8.5`
+- OpenCV `4.8` ([compiled with cuda](scripts/install_opencv4.8.0_Jetson.sh))
 
-# TensorRT C++ Tutorial
-*I read all the NVIDIA TensorRT docs so that you don't have to!*
+# Installation
 
-This project demonstrates how to use the TensorRT C++ API for high performance GPU inference on image data. It covers how to do the following:
-- How to install TensorRT 8 on Ubuntu 20.04 / 22.04.
-- How to generate a TensorRT engine file optimized for your GPU.
-- How to specify a simple optimization profile.
-- How to run FP32, FP16, or INT8 precision inference. 
-- How to read / write data from / into GPU memory and work with GPU images.
-- How to use cuda stream to run async inference and later synchronize. 
-- How to work with models with static and dynamic batch sizes.
-- How to work with models with single or multiple output tensors.
-- How to work with models with multiple inputs.
-- Includes a [Video walkthrough](https://youtu.be/Z0n5aLmcRHQ) where I explain every line of code.
-- The code can be used as a base for any model which takes a fixed size image / images as input, including [Insightface](https://github.com/deepinsight/insightface) [ArcFace](https://github.com/onnx/models/tree/main/vision/body_analysis/arcface), [YoloV8](https://github.com/ultralytics/ultralytics), [SCRFD](https://insightface.ai/scrfd) face detection.
-  - You will just need to implement the appropriate post-processing code.
-- TODO: Add support for models with dynamic input shapes.
-- TODO: Add support for Windows
-
-## Getting Started
-The following instructions assume you are using Ubuntu 20.04 or 22.04.
-You will need to supply your own onnx model for this sample code or you can download the sample model (see Sanity Check section below). 
-
-### Prerequisites
-- Tested and working on Ubuntu 20.04 and 22.04
-- Install CUDA 11 or 12, instructions [here](https://developer.nvidia.com/nvidia-tensorrt-8x-download).
-  - Recommended >= 11.8
-  - Required >= 11.0
-  - Required <= 12.1 (TensorRT only supports up to 12.1)
-- Install cudnn, instructions [here](https://docs.nvidia.com/deeplearning/cudnn/install-guide/index.html#download).
-  - Required >= 8
-  - Required < 9 (OpenCV GPU does not yet support)
-- `sudo apt install build-essential`
-- `sudo snap install cmake --classic`
-- Install OpenCV with cuda support. To compile OpenCV from source, run the `build_opencv.sh` script provided in `./scripts/`.
-  - If you use the provided script and you have installed cuDNN to a non-standard location, you must modify the `CUDNN_INCLUDE_DIR` and `CUDNN_LIBRARY` variables in the script.  
-  - Recommended >= 4.8
-- Download TensorRT 8 from [here](https://developer.nvidia.com/nvidia-tensorrt-8x-download).
-  - Required >= 8.6 
-- Navigate to the `CMakeLists.txt` file and replace the `TODO` with the path to your TensorRT installation.
-
-### Building the Library
-- `mkdir build`
-- `cd build`
-- `cmake ..`
-- `make -j$(nproc)`
-
-### Running the Executable
-- Navigate to the build directory
-- Run the executable and provide the path to your onnx model.
-- ex. `./run_inference_benchmark ../models/yolov8n.onnx`
-  - Note: See sanity check section below for instructions on how to obtain the yolov8n model.  
-- The first time you run the executable for a given model and options, a TensorRT engine file will be built from your onnx model. This process is fairly slow and can take 5+ minutes for some models (ex. yolo models). 
-
-### Sanity Check
-- To perform a sanity check, download the `YOLOv8n` model from [here](https://github.com/ultralytics/ultralytics#models).
-- Next, convert it from pytorch to onnx using the following script:
-  - You will need to run `pip3 install ultralytics` first.
-     
-```python
-from ultralytics import YOLO
-model = YOLO("./yolov8n.pt")
-model.fuse()
-model.info(verbose=False)  # Print model information
-model.export(format="onnx", opset=12) # Export the model to onnx using opset 12
+```sh
+git clone https://gitlab.ifremer.fr/lt330b2/tensorrt-cpp-api.git
+cd tensorrt-cpp-api
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -j
 ```
 
-- Place the resulting onnx model, `yolov8n.onnx`, in the `./models/` directory. 
-- Running inference using said model and the image located in `./inputs/team.jpg` should produce the following feature vector:
-  - Note: The feature vector will not be identical (but very similar) as [TensorRT is not deterministic](https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#determinism). 
-```text
-3.41113 16.5312 20.8828 29.8984 43.7266 54.9609 62.0625 65.8594 70.0312 72.9531 ...
+# Usage
+
+To use this project, you will need an [ONNX](https://onnx.ai/) model and a [detector config file](#detector-config).
+
+The first time you instanciate a detector, a `TensorRT` "engine" file will be generated (`TensorRT` "compile" the instructions for the GPU), so the first run usually takes longer.
+
+> **Warning**:
+> The program currently check if the engine has already been generated based **on the ONNX filename**.
+> If you generate a new model, make sure to rename the ONNX with another name or no engine will be generated.
+
+## CLI
+
+```
+Usage: ./build/run_prediction_image [--help] [--version] --model VAR --cfg VAR --image VAR
+
+Optional arguments:
+  -h, --help     shows help message and exits 
+  -v, --version  prints version information and exits 
+  --model        Path to the model (.onnx or .trt) [required]
+  --cfg          Path to the inference config file (.yaml) [required]
+  --image        Path to an image (check supported formats here: https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#imread [required]
 ```
 
-### INT8 Inference
-Enabling INT8 precision can further speed up inference at the cost of accuracy reduction due to reduced dynamic range. 
-For INT8 precision, the user must supply calibration data which is representative of real data the model will see. 
-It is advised to use 1K+ calibration images. To enable INT8 inference with the YoloV8 sanity check model, the following steps must be taken:
--  Change `options.precision = Precision::FP16;` to `options.precision = Precision::INT8;` in `main.cpp`
-- `options.calibrationDataDirectoryPath = "";` must be changed in `main.cpp` to specify path containing calibration data. 
-  - If using the YoloV8 model, it is advised to used the COCO validation dataset, which can be downloaded with `wget http://images.cocodataset.org/zips/val2017.zip`
-- Make sure the resizing code in the `Int8EntropyCalibrator2::getBatch` method in `engine.cpp` (see `TODO`) is correct for your model.
-  - If using the YoloV8 model, the preprocessing code is correct and does not need to be changed.
-- Recompile, run the executable. 
-- The calibration cache will be written to disk (`.calibration` extension) so that on subsequent model optimizations it can be reused. If you'd like to regenerate the calibration data, you must delete this cache file.  
-- If you get an "out of memory in function allocate" error, then you must reduce `Options.calibrationBatchSize` so that the entire batch can fit in your GPU memory. 
+## C++ API
 
-### Benchmarks
-Benchmarks run on RTX 3050 Ti Laptop GPU, 11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz.
+```c++
+#include <opencv2/core.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/imgcodecs.hpp>
 
-| Model   | Precision | Batch Size | Avg Inference Time |
-|---------|-----------|------------|--------------------|
-| yolov8n | FP32      | 1          | 4.732 ms           |
-| yolov8n | FP16      | 1          | 2.493 ms           |
-| yolov8n | INT8      | 1          | 2.009 ms           |
-| yolov8x | FP32      | 1          | 76.63 ms           |
-| yolov8x | FP16      | 1          | 25.08 ms           |
-| yolov8x | INT8      | 1          | 11.62 ms           |
+#include "detector.h"
 
-### Sample Integration
-Wondering how to integrate this library into your project? Or perhaps how to read the outputs of the YoloV8 model to extract meaningful information? 
-If so, check out my newest project, [YOLOv8-TensorRT-CPP](https://github.com/cyrusbehr/YOLOv8-TensorRT-CPP), which demonstrates how to use the TensorRT C++ API to run YoloV8 inference (supports object detection, semantic segmentation, and body pose estimation). It makes use of this project in the backend!
+// define paths
+std::filesystem::path modelPath = ...
+std::filesystem::path cfgPath = ...
+std::filesystem::path imagePath = ...
 
-### Understanding the Code
-- The bulk of the implementation is in `src/engine.cpp`. I have written lots of comments all throughout the code which should make it easy to understand what is going on. 
-- You can also check out my [deep-dive video](https://youtu.be/Z0n5aLmcRHQ) in which I explain every line of code.
+// Read image and put to GPU
+cv::Mat cpuImg = cv::imread(imagePath);
+cv::cuda::GpuMat gpuImg;
+gpuImg.upload(cpuImg);
 
-### How to Debug
-- If you have issues creating the TensorRT engine file from the onnx model, navigate to `src/engine.cpp` and change the log level by changing the severity level to `kVERBOSE` and rebuild and rerun. This should give you more information on where exactly the build process is failing.
+// Perform prediction
+Detector detector(modelPath, cfgPath);
+std::vector<BoundingBox> detections = detector.mPredict(gpuImg);
+```
 
-### Show your Appreciation
-If this project was helpful to you, I would appreciate if you could give it a star. That will encourage me to ensure it's up to date and solve issues quickly. I also do consulting work if you require more specific help. Connect with me on [LinkedIn](https://www.linkedin.com/in/cyrus-behroozi/). 
+## Detector config
 
-### Contributors
+The `Detector` class parse its definition from a YAML file.
 
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://ltetrel.github.io/"><img src="https://avatars.githubusercontent.com/u/37963074?v=4?s=100" width="100px;" alt="Loic Tetrel"/><br /><sub><b>Loic Tetrel</b></sub></a><br /><a href="https://github.com/cyrusbehr/tensorrt-cpp-api/commits?author=ltetrel" title="Code">💻</a></td>
-    </tr>
-  </tbody>
-</table>
+It is decomposed into three mandatory sections: the **model definition**, the different **transforms** applied to the data and the **labels description**.
 
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
+An example of config used by the tests for darknet backend is given [here](https://data.kitware.com/#item/66bf4cb2af422925a420eaf4).
 
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+```yaml
+%YAML:1.0
 
-### Changelog
+model:
+  ...
 
-**V4.1**
+image_pre_transforms:
+  ...
+target_post_transforms:
+  ...
 
-- Added support for fixed batch size > 1.  
+labels:
+  ...
+colors:
+  ...
+```
 
-**V4.0**
+### Model definition
 
-- Added support for INT8 precision.
+This is where we inform the detector what type of machine learning model is used and was serialized by TensorRT.
 
+Two parameters are required:
+- `type`: defines the type of the model, usually standard pytorch detector architecture. Check [here](src/configParser.cpp:l10) to see a list of available model types.
+- `backend`: what library was used when exporting to ONNX. This is important since this informs us about the underlying data formats inside the model.
 
-**V3.0**
+```yaml
+model:
+    type: yolov4-csp-s-mish
+    backend: darknet
+```
 
-- Implementation has been updated to use TensorRT 8.6 API (ex. `IExecutionContext::enqueueV3()`). 
-- Executable has renamed from `driver` to `run_inference_benchmark` and now must be passed path to onnx model as command line argument. 
-- Removed `Options.doesSupportDynamicBatchSize`. Implementation now auto-detects supported batch sizes.
-- Removed `Options.maxWorkspaceSize`. Implementation now does not limit GPU memory during model constructions, allowing implementation to use as much of memory pool as is available for intermediate layers.
+### Transforms
 
-**v2.2**
+This is the key section that defines all functions that are used by the `Detector`. There are two types of transformations:
+- `image_pre_transforms`: This is the list of pre-processing functions applied on the input image. Those functions are wrapped in CUDA for maximum performance.
+- `target_post_transforms`: The list of post-processing functions applied on the input bounding box. Those operations will run on the CPU.
 
-- Serialize model name as part of engine file. 
+For an exhaustive list of all image and box transforms, you can check [here](src/transforms.h:l86). Each of those transforms have different options depending on the operation. For example for `ConvertColorImg` there is one parameter `model` that defines what color model you want to convert to (`RGB`, `BGR`, or `GRAY`). 
 
-**V2.1**
+```yaml
+ConvertColorImg:
+    model: "BGR"
+```
 
-- Added support for models with multiple inputs. Implementation now supports models with single inputs, multiple inputs, single outputs, multiple outputs, and batching. 
+All transforms will be chained in order so be carefull!
 
-**V2.0**
+For some parameters, it is impossible to know in advance it value. Typically we cannot know in advance the target image size, because it depends on the input image! In that case, simply put `null` in the corresponding parameter.
 
-- Requires OpenCV cuda to be installed. To install, follow instructions [here](https://gist.github.com/raulqf/f42c718a658cddc16f9df07ecc627be7).
-- `Options.optBatchSizes` has been removed, replaced by `Options.optBatchSize`.
-- Support models with more than a single output (ex. SCRFD).  
-- Added support for models which do not support batch inference (first input dimension is fixed).
-- More error checking.
-- Fixed a bunch of common issues people were running into with the original V1.0 version.
-- Remove whitespace from GPU device name 
+```yaml
+ResizeBBox:
+    size: [null, null]  # height width of image, read from input frame
+    method:  "maintain_ar"
+```
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[stars-shield]: https://img.shields.io/github/stars/cyrusbehr/tensorrt-cpp-api.svg?style=flat-square
-[stars-url]: https://github.com/cyrusbehr/tensorrt-cpp-api/stargazers
-[issues-shield]: https://img.shields.io/github/issues/cyrusbehr/tensorrt-cpp-api.svg?style=flat-square
-[issues-url]: https://github.com/cyrusbehr/tensorrt-cpp-api/issues
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=flat-square&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/cyrus-behroozi/
+## Labels description
 
-## Contributors ✨
+The last section is the labels description mostly used when drawing the predictions to an image:
+- `labels`: defines the different class names for the predictions, where the order is important. If the model outputs `0` then the corresponding class name would be the first in the list.
+- `colors`: the different colors for each class in floating-point format [`R`, `G`, `B`]. Should keep the same order as for `labels`.
 
-Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+```yaml
+labels:
+    - "Scallop"
+    - "cucumaria_frondosa"
 
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+colors:
+    - [0.36036036036036034, 1.0, 0.0]
+    - [0.0, 0.5615942028985503, 1.0]
+```
 
-This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
+# Testing
 
-## Usefull links
+```
+cd build
+ctest
+```
+
+By default, all test data will be automatically downloaded from kitware girder in [this collection](https://data.kitware.com/#collection/66bf4b49af422925a420eada).
+
+If you want to customize and use your own data for testing (not recommended), re-configure cmake with `-DDATA_TESTING_DIR=path/to/data/tests` and re-build.
+
+# Benchmarking
+
+Desktop (linux 5.15): CPU Intel i7-11800H @ 2.3GHz / GPU Nvidia RTX 3050 Ti Laptop.
+
+|        Model         |   yolov4-csp-s-mish  |
+|----------------------|----------------------|
+| Pre-processing (ms)  | 0.79578 +/- 0.05134  |
+| Inference (ms)       | 4.72340 +/- 0.05599  |
+| Post-processing (ms) | 4.87697 +/- 0.06488  |
+
+Jetson Xavier NX (tegra 5.10): CPU ARMv8 8-core @ 1.420GHz / GPU Nvidia Volta 512-core (64 Tensor cores).
+
+|        Model         |   yolov4-csp-s-mish  |
+|----------------------|----------------------|
+| Pre-processing (ms)  | 3.79386  +/- 0.23677 |
+| Inference (ms)       | 24.32557 +/- 1.99187 |
+| Post-processing (ms) | 0.76734  +/- 0.12630 |
+
+## Enable benchmark
+
+Use the following cmake command:
+```sh
+cmake -DCMAKE_BUILD_TYPE=Release -DWITH_BENCHMARK=ON ..
+```
+You can then run  the executable `run_prediction_image` and you should see the benchmark outpout.
+
+> **Warning**:
+> Do not use in production environment, since this impacts the processing time.
+
+# Usefull links
 
 TensorRT documentation: https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/index.html
 https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-861/api/c_api/index.html
 
-## Jetson performance mode
+# Jetson performance mode
 
 Jetson devices allows you to switch between different modes.
 By default the GPU is really slow so we recommend you to boost it.
@@ -231,9 +197,6 @@ sudo /usr/sbin/nvpmodel -m <mode-id>
 ```
 You can find the different mode-id for the jetson NX [here](https://docs.nvidia.com/jetson/archives/l4t-archived/l4t-3275/index.html#page/Tegra%20Linux%20Driver%20Package%20Development%20Guide/power_management_jetson_xavier.html#).
 
+# Acknowledgement
 
-WARNING: for trt engine file generation, currently check from the ONNX filename. If you generate a new model, make sure to rename the ONNX with another name or no engine will be generated.
-
-
-Config:
-If you put `null`, the programm will try to infer its value (for example image size at runtime).
+https://github.com/cyrusbehr/tensorrt-cpp-api
